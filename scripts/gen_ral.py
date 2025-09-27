@@ -242,6 +242,59 @@ def build_uart_t(cfg):
 
     return uart
 
+def build_aes_t(cfg):
+    """Build AES peripheral structure """
+    aes = Struct('ral_aes_t')
+
+    # NAME0 register (0x00) - read-only
+    aes.add(Register('NAME0', read_only=True))
+    
+    # NAME1 register (0x01) - read-only 
+    aes.add(Register('NAME1', read_only=True))
+    
+    # VERSION register (0x02) - read-only
+    aes.add(Register('VERSION', read_only=True))
+    
+    # Padding jusqu'à 0x08
+    aes.add(Register(None, 5))  # 0x03-0x07
+    
+    # CTRL register (0x08)
+    ctrl = Register('CTRL')
+    ctrl.add(Flag('START'))  # bit 0
+    aes.add(ctrl)
+    
+    # STATUS register (0x09) - read-only
+    status = Register('STATUS', read_only=True)
+    status.add(Flag('READY'))  # bit 0
+    status.add(Flag('VALID'))  # bit 1
+    aes.add(status)
+    
+    # CONFIG register (0x0A)
+    config = Register('CONFIG')
+    config.add(Flag('ENCDEC'))     # bit 0: 0=decrypt, 1=encrypt
+    config.add(Flag('KEYLEN'))     # bit 1: 0=128-bit key, 1=256-bit key
+    aes.add(config)
+    
+    # Padding jusqu'à 0x10
+    aes.add(Register(None, 5))  # 0x0B-0x0F
+    
+    # KEY registers (0x10-0x17) - 8 registres
+    aes.add(Register('KEY', 8))
+    
+    # Padding jusqu'à 0x20  
+    aes.add(Register(None, 8))  # 0x18-0x1F
+    
+    # BLOCK registers (0x20-0x23) - 4 registres
+    aes.add(Register('BLOCK', 4))
+    
+    # Padding jusqu'à 0x30
+    aes.add(Register(None, 12))  # 0x24-0x2F
+    
+    # RESULT registers (0x30-0x33) - 4 registres, read-only
+    aes.add(Register('RESULT', 4, read_only=True))
+
+    return aes
+
 
 def build_ral_t(cfg):
     ral = Struct('ral_t')
@@ -261,6 +314,8 @@ def build_ral_t(cfg):
         ral.add(s)
 
     ral.add(Dtype('ral_data_t *', 'MEM', cfg[f'no_mems']))
+
+    ral.add(Dtype('ral_aes_t *', 'AES'))
 
     return ral
 
@@ -404,6 +459,9 @@ def write_ral_def(cfg, cw):
 
         cw.indent -= 1
         cw.put('},')
+    
+    addr, end = cfg['mmap_aes']
+    cw.put(f'.AES = (ral_aes_t *) {ahex(addr, aw)},')
 
     cw.indent -= 1
     cw.put('};')
@@ -488,6 +546,7 @@ if __name__ == '__main__':
         build_spi_t(cfg),
         build_timer_t(cfg),
         build_uart_t(cfg),
+        build_aes_t(cfg),
         build_ral_t(cfg)
     ]
 

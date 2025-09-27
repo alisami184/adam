@@ -20,6 +20,7 @@ extern void sleep(void);
 #include "uart.h"
 #include "timer.h"
 #include "sysctrl.h"
+#include "aes.h"
 
 // Utils inc
 #include "types.h"

@@ -14,12 +14,13 @@ module adam_fabric_hsdom #(
 
     AXI_LITE.Master mem [NO_MEMS+1],
     AXI_LITE.Master hsp [NO_HSPS+1],
+    // AXI_LITE.Master aes_hsp,
     AXI_LITE.Master debug_mst,
     AXI_LITE.Master to_lsdom
 );
 
     localparam NO_SLVS = 2*NO_CPUS + NO_DMAS + EN_DEBUG + 1;
-    localparam NO_MSTS = NO_MEMS + NO_HSPS + EN_DEBUG + 1;
+    localparam NO_MSTS = NO_MEMS + NO_HSPS + 1 + EN_DEBUG + 1;
 
     localparam type RULE_T = adam_cfg_pkg::MMAP_T;
 
@@ -74,7 +75,10 @@ module adam_fabric_hsdom #(
         localparam HSP_S = MEMS_E;
         localparam HSP_E = HSP_S + NO_HSPS;
 
-        localparam DEBUG_MST_S = HSP_E;
+        localparam AES_S = HSP_E;
+        localparam AES_E = AES_S + 1;
+
+        localparam DEBUG_MST_S = AES_E;
         localparam DEBUG_MST_E = DEBUG_MST_S + EN_DEBUG;
 
         localparam TO_LSDOM_S = DEBUG_MST_E;
@@ -99,6 +103,17 @@ module adam_fabric_hsdom #(
             };
             `ADAM_AXIL_OFFSET(hsp[i-HSP_S], msts[i], addr_map[i].start);
         end
+
+        // // AES High Speed Co-processor
+        // for (genvar i = AES_S; i < AES_E ; i++) begin
+        //     assign addr_map[i] = '{
+        //         start : MMAP_AES.start,
+        //         end_  : MMAP_AES.end_,
+        //         inc   : '0
+        //     };
+        //     `ADAM_AXIL_OFFSET(aes_hsp, msts[i], addr_map[i].start);
+        // end
+
 
         // Debug
         for (genvar i = DEBUG_MST_S; i < DEBUG_MST_E; i++) begin

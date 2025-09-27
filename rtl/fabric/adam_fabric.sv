@@ -29,6 +29,7 @@ module adam_fabric #(
 
     AXI_LITE.Master hsdom_mem [NO_MEMS+1],
     AXI_LITE.Master hsdom_hsp [NO_HSPS+1],
+    // AXI_LITE.Master hsdom_aes,
     AXI_LITE.Master hsdom_debug_mst
 );
 
@@ -114,6 +115,7 @@ module adam_fabric #(
 
         .mem       (hsdom_mem),
         .hsp       (hsdom_hsp),
+        //.aes_hsp   (hsdom_aes),
         .debug_mst (hsdom_debug_mst),
         .to_lsdom  (hsdom_to_lsdom)
     );

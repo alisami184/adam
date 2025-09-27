@@ -80,6 +80,7 @@
     \
     __opt MMAP_T MMAP_DEBUG = CFG.MMAP_DEBUG __sep \
     __opt MMAP_T MMAP_HSP   = CFG.MMAP_HSP __sep \
+    __opt MMAP_T MMAP_AES   = CFG.MMAP_AES __sep \
     __opt MMAP_T MMAP_MEM   = CFG.MMAP_MEM __sep \
     \
     __opt int NO_LSPAS = NO_LSPA_GPIOS + NO_LSPA_SPIS + NO_LSPA_TIMERS + \

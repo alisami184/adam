@@ -35,7 +35,7 @@ if [[ $(image_exists) -eq 0 ]] || [[ $BUILD -eq 1 ]]; then
     docker build -t $IMAGE .
 fi
 
-RUN_CMD=(docker run -it --rm --network host --privileged)
+RUN_CMD=(docker run -it --rm --network host --privileged -v /dev:/dev)
 
 if [ $ROOT -eq 0 ]; then
     RUN_CMD+=(-u $(id -u):$(id -g))

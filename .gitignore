@@ -30,3 +30,7 @@ misc/
 *.csv
 *.bmp
 *.ipynb
+*.hex
+*.jou
+*.wlf
+jtag_*.cfg

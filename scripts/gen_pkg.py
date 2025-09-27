@@ -97,6 +97,7 @@ package {{name}};
 
         MMAP_T MMAP_DEBUG;
         MMAP_T MMAP_HSP;
+        MMAP_T MMAP_AES;
         MMAP_T MMAP_MEM;
     } CFG_T;
 
@@ -150,6 +151,7 @@ package {{name}};
 
         MMAP_DEBUG : {{mmap_debug}},
         MMAP_HSP   : {{mmap_hsp}},
+        MMAP_AES   : {{mmap_aes}},
         MMAP_MEM   : {{mmap_mem}}
     };
 
@@ -201,6 +203,7 @@ mmap_fields = [
     'mmap_lspb',
     'mmap_debug',
     'mmap_hsp',
+    'mmap_aes',
     'mmap_mem'
 ]
 
