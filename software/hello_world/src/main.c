@@ -1,7 +1,6 @@
 #include "system.h"
 
 static void hw_init(void);
-static void print_hex(void);
 
 volatile int timer_interrupt_occurred = 0;
 volatile int pin_state = 1;
@@ -14,23 +13,11 @@ void __attribute__((interrupt)) default_handler(void)
     timer_interrupt_occurred = 1;
 }
 
-// Ajoutez après vos déclarations existantes
-void print_hex(uint32_t value) {
-    // Simple implementation
-    char hex[] = "0123456789abcdef";
-    char buffer[9];
-    for(int i = 7; i >= 0; i--) {
-        buffer[7-i] = hex[(value >> (i*4)) & 0xF];
-    }
-    buffer[8] = '\0';
-    
-    // Envoi via UART (remplacez par votre fonction UART)
-    for(int i = 0; i < 8; i++) {
-        // uart_send_char(buffer[i]); // À adapter selon votre HAL
-    }
-}
 
 int main() {
+
+    volatile unsigned char c;
+    c = 0;
     uint32_t key128[4]={
       0x2b7e1516,
       0x28aed2a6,
@@ -61,8 +48,18 @@ int main() {
 
     aes_read_result(ciphertext);
 
-    while(1) {
-        timer0_delay(16250, 1);
+    gpio_write(RAL.LSPA.GPIO[0], 0, 1);
+    
+    while (1)
+    {
+      gpio_write(RAL.LSPA.GPIO[0], c, pin_state);
+      timer0_delay(16250, 1);
+      //delay_ms(RAL.LSPA.TIMER[0], 1000);
+      if (c == 8) {
+        c = 0;
+        pin_state = !pin_state;
+      }
+      else c++;
     }
 }
 

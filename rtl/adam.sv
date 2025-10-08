@@ -58,8 +58,8 @@ module adam #(
     ADAM_PAUSE lsdom_pause ();
     ADAM_PAUSE hsdom_pause ();
 
-    // ADAM_PAUSE lsdom_fab_pause ();
-    // ADAM_PAUSE hsdom_fab_pause ();
+    ADAM_PAUSE lsdom_fab_pause ();
+    ADAM_PAUSE hsdom_fab_pause ();
 
     ADAM_PAUSE fab_lsdom_pause ();
     ADAM_PAUSE fab_hsdom_pause ();
@@ -104,7 +104,7 @@ module adam #(
     ADAM_PAUSE   lsdom_syscfg_pause ();
     `ADAM_AXIL_I lsdom_syscfg_axil ();
 
-    // ADAM_PAUSE   aes_pause ();
+    ADAM_PAUSE   aes_pause ();
 
     ADAM_PAUSE   hsdom_debug_pause ();
     `ADAM_AXIL_I hsdom_debug_mst_axil ();
@@ -480,17 +480,17 @@ module adam #(
     end
     // hsdom - aes ===========================================================
 
-    // `ADAM_AXIL_I aes_axil ();
+    `ADAM_AXIL_I aes_axil ();
 
-    // `ADAM_PAUSE_SLV_TIE_ON(aes_pause);
+    `ADAM_PAUSE_SLV_TIE_ON(aes_pause);
 
-    // adam_axil_aes #(
-    // `ADAM_CFG_PARAMS_MAP
-    // ) adam_axil_aes_inst (
-    //     .seq   (hsdom_seq),
-    //     .pause (aes_pause), 
-    //     .axil  (aes_axil.Slave)
-    // );
+    adam_axil_aes #(
+    `ADAM_CFG_PARAMS_MAP
+    ) adam_axil_aes_inst (
+        .seq   (hsdom_seq),
+        .pause (aes_pause), 
+        .axil  (aes_axil.Slave)
+    );
 
     // hsdom - debug ==========================================================
 
@@ -606,7 +606,7 @@ module adam #(
 
         .hsdom_mem       (hsdom_mem_axil),
         .hsdom_hsp       (hsdom_hsp_axil),
-        // .hsdom_aes       (aes_axil),
+        .hsdom_aes       (aes_axil),
         .hsdom_debug_mst (hsdom_debug_mst_axil)
     );
 

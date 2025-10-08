@@ -1,7 +1,7 @@
 #include "aes.h"
 
 /**
- * @brief Configure l'AES en une fois : mode et longueur de clé
+ * @brief Configure l'AES : mode et longueur de clé
  * @param encrypt: AES_ENCRYPT (1) ou AES_DECRYPT (0)  
  * @param keylen: AES_KEYLEN_128, ou AES_KEYLEN_256
  */
@@ -21,6 +21,12 @@ void aes_config(uint8_t encrypt, uint8_t keylen) {
     
     RAL.AES->CONFIG = config;
 }
+
+/**
+ * @brief Configure la clé
+ * @param key: tableau contenant la clé sous 128bit ou 256bit
+ * @param words: 4 ou 8 selon la taille de la clé
+ */
 
 void aes_write_key(uint32_t *key,uint8_t words) {   
     for (uint8_t i=0; i < words; i++) {

@@ -218,7 +218,7 @@ default:
 
   mmap_debug: [0x00080000, 0x00088000]
   mmap_hsp:   [0x00090000, 0x00098000, 0x00000400]
-  mmap_aes:   [0x000A0000, 0x000A1000]  # Au lieu de [0x00098000, 0x00099000]
+  mmap_aes:   [0x000A0000, 0x000A1000] 
   mmap_mem:   [0x01000000, 0xFFFFFFFF, 0x01000000]
 
   clk_period: 20 #ns
@@ -360,8 +360,8 @@ fsets:
       - pause/adam_pause_demux_tb.sv
       - pause/adam_pause_mux_tb.sv
 
-      # - periph/aes/adam_aes_key_expansion_tb.sv
-      # - periph/aes/adam_aes_tb.sv
+      - periph/aes/adam_aes_key_expansion_tb.sv
+      - periph/aes/adam_aes_tb.sv
       - periph/gpio/adam_periph_gpio_tb.sv
       - periph/spi/adam_periph_spi_phy_tb.sv
       - periph/spi/adam_periph_spi_tb.sv
@@ -378,7 +378,7 @@ fsets:
       - adam_clk_div_tb.sv
       - adam_tb.sv
 
-      # - axil/adam_axil_aes_tb.sv
+      - axil/adam_axil_aes_tb.sv
 
   adam_rtl:
     requires:
@@ -402,7 +402,7 @@ fsets:
 
       - stream/adam_stream_skid.sv
       
-      # - axil/adam_axil_aes.sv
+      - axil/adam_axil_aes.sv
       - axil/adam_axil_apb_bridge.sv
       - axil/adam_axil_pause.sv
       - axil/adam_axil_skid.sv
@@ -423,14 +423,14 @@ fsets:
       - periph/uart/adam_periph_uart.sv
       - periph/adam_periph.sv
       - periph/adam_periph_hawkeye.sv
-      # - periph/aes_core/adam_aes_core.sv
-      # - periph/aes_core/adam_aes_decipher_block.sv
-      # - periph/aes_core/adam_aes_encipher_block.sv
-      # - periph/aes_core/adam_aes_inv_sbox.sv
-      # - periph/aes_core/adam_aes_key_expansion.sv
-      # - periph/aes_core/adam_aes_sbox.sv
-      # - periph/aes_core/adam_aes_top.sv
-      # - periph/aes_core/adam_aes_core.sv
+      - periph/aes_core/adam_aes_core.sv
+      - periph/aes_core/adam_aes_decipher_block.sv
+      - periph/aes_core/adam_aes_encipher_block.sv
+      - periph/aes_core/adam_aes_inv_sbox.sv
+      - periph/aes_core/adam_aes_key_expansion.sv
+      - periph/aes_core/adam_aes_sbox.sv
+      - periph/aes_core/adam_aes_top.sv
+      - periph/aes_core/adam_aes_core.sv
 
 
       - syscfg/adam_syscfg_tgt.sv

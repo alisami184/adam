@@ -14,7 +14,7 @@ module adam_fabric_hsdom #(
 
     AXI_LITE.Master mem [NO_MEMS+1],
     AXI_LITE.Master hsp [NO_HSPS+1],
-    // AXI_LITE.Master aes_hsp,
+    AXI_LITE.Master aes_hsp,
     AXI_LITE.Master debug_mst,
     AXI_LITE.Master to_lsdom
 );
@@ -104,15 +104,15 @@ module adam_fabric_hsdom #(
             `ADAM_AXIL_OFFSET(hsp[i-HSP_S], msts[i], addr_map[i].start);
         end
 
-        // // AES High Speed Co-processor
-        // for (genvar i = AES_S; i < AES_E ; i++) begin
-        //     assign addr_map[i] = '{
-        //         start : MMAP_AES.start,
-        //         end_  : MMAP_AES.end_,
-        //         inc   : '0
-        //     };
-        //     `ADAM_AXIL_OFFSET(aes_hsp, msts[i], addr_map[i].start);
-        // end
+        // AES High Speed Co-processor
+        for (genvar i = AES_S; i < AES_E ; i++) begin
+            assign addr_map[i] = '{
+                start : MMAP_AES.start,
+                end_  : MMAP_AES.end_,
+                inc   : '0
+            };
+            `ADAM_AXIL_OFFSET(aes_hsp, msts[i], addr_map[i].start);
+        end
 
 
         // Debug
