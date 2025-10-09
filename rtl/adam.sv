@@ -423,8 +423,8 @@ module adam #(
     logic  rready;
     DATA_T rdata;
 
-    assign hsdom_hsp_seq.clk = lsdom_seq.clk;
-    assign hsdom_hsp_seq.rst = lsdom_seq.rst;
+    assign hsdom_hsp_seq.clk = hsdom_seq.clk;
+    assign hsdom_hsp_seq.rst = hsdom_seq.rst;
 
     `ADAM_PAUSE_MST_TIE_ON(fix_me);
     `ADAM_PAUSE_SLV_TIE_ON(hsdom_hsp_pause[0]);
@@ -471,26 +471,29 @@ module adam #(
         .dout_valid_o (hsdom_dout_valid_o),
         .dout_ready_i (hsdom_dout_ready_i)
     );
+    assign hsdom_hsp_irq[0] = 1'b0;
 
     // HSP[1] = AES
     if (NO_HSPS > 1) begin : gen_aes_hsp
-        ADAM_SEQ hsdom_aes_seq ();
-        assign hsdom_aes_seq.clk = hsdom_seq.clk;
-        assign hsdom_aes_seq.rst = hsdom_seq.rst || hsdom_hsp_rst[1];
-
         adam_axil_aes #(
             `ADAM_CFG_PARAMS_MAP
         ) adam_axil_aes_inst (
-            .seq   (hsdom_aes_seq),
+            .seq   (hsdom_hsp_seq),
             .pause (hsdom_hsp_pause[1]),  
             .axil  (hsdom_hsp_axil[1]),
             .irq   (hsdom_hsp_irq[1])
         );
-    end else begin
-        `ADAM_PAUSE_SLV_TIE_OFF(hsdom_hsp_pause[1]);
-        `ADAM_AXIL_SLV_TIE_OFF(hsdom_hsp_axil[1]);
-        assign hsdom_hsp_irq[1] = 1'b0;
     end
+    // Tie off unused HSPs (from index 2 onwards, or from 1 if AES not used)
+    generate
+        for (genvar i = (NO_HSPS > 1 ? 2 : 1); i <= NO_HSPS; i++) begin : gen_unused_hsp
+            if (i < NO_HSPS) begin
+                `ADAM_PAUSE_SLV_TIE_OFF(hsdom_hsp_pause[i]);
+                `ADAM_AXIL_SLV_TIE_OFF (hsdom_hsp_axil [i]);
+                assign hsdom_hsp_irq[i] = 1'b0;
+            end
+        end
+    endgenerate
 
     for (genvar i = 2; i < NO_HSPS; i++) begin
         `ADAM_PAUSE_SLV_TIE_OFF(hsdom_hsp_pause[i]);

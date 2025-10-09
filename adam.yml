@@ -134,7 +134,7 @@ targets:
 
     no_cpus: 1
     no_dmas: 0
-    no_hsps: 1
+    no_hsps: 2
     no_mems: 2
 
     # en_lpcpu: False
@@ -175,7 +175,7 @@ default:
 
   no_cpus: 1
   no_dmas: 1
-  no_hsps: 0
+  no_hsps: 2
   no_mems: 2
 
   en_lpcpu: True

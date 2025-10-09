@@ -142,7 +142,7 @@ trap:
 	j irq_8_handler
 	j irq_9_handler
 	j irq_10_handler
-	j irq_11_handler
+	j aes_irq_handler
 	j irq_12_handler
 	j irq_13_handler
 	j irq_14_handler
@@ -174,7 +174,7 @@ trap:
 .weak irq_8_handler
 .weak irq_9_handler
 .weak irq_10_handler
-.weak irq_11_handler
+.weak aes_irq_handler
 .weak irq_12_handler
 .weak irq_13_handler
 .weak irq_14_handler
@@ -191,7 +191,6 @@ trap:
 .set irq_8_handler, default_handler
 .set irq_9_handler, default_handler
 .set irq_10_handler, default_handler
-.set irq_11_handler, default_handler
 .set irq_12_handler, default_handler
 .set irq_13_handler, default_handler
 .set irq_14_handler, default_handler

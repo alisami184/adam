@@ -31,9 +31,7 @@ int main() {
       0xe93d7e11,
       0x7393172a
     };
-
-    uint32_t ciphertext[4];
-
+    
     hw_init();
     uart_init(RAL.LSPA.UART[0], 115200);
     
@@ -43,10 +41,6 @@ int main() {
     aes_write_key(key128,4);
     aes_write_block(plaintext);
     aes_start();
-
-    aes_wait_for_result();
-
-    aes_read_result(ciphertext);
 
     gpio_write(RAL.LSPA.GPIO[0], 0, 1);
     

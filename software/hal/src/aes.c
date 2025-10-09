@@ -62,3 +62,12 @@ void aes_wait_for_result(void) {
     while (!aes_is_done()) {
     }
 }
+
+/* ISR appelé automatiquement par l’IRQ 11 (via startup.s) */
+void __attribute__((interrupt("machine"))) aes_irq_handler(void) {
+    /* 1) (optionnel) vérifier le DONE si besoin */
+    uint32_t ciphertext[4];
+
+    aes_read_result(ciphertext);
+
+}
