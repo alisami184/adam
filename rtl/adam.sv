@@ -104,8 +104,6 @@ module adam #(
     ADAM_PAUSE   lsdom_syscfg_pause ();
     `ADAM_AXIL_I lsdom_syscfg_axil ();
 
-    ADAM_PAUSE   aes_pause ();
-
     ADAM_PAUSE   hsdom_debug_pause ();
     `ADAM_AXIL_I hsdom_debug_mst_axil ();
     `ADAM_AXIL_I hsdom_debug_slv_axil ();
@@ -474,23 +472,31 @@ module adam #(
         .dout_ready_i (hsdom_dout_ready_i)
     );
 
-    for (genvar i = 1; i < NO_HSPS; i++) begin
+    // HSP[1] = AES
+    if (NO_HSPS > 1) begin : gen_aes_hsp
+        ADAM_SEQ hsdom_aes_seq ();
+        assign hsdom_aes_seq.clk = hsdom_seq.clk;
+        assign hsdom_aes_seq.rst = hsdom_seq.rst || hsdom_hsp_rst[1];
+
+        adam_axil_aes #(
+            `ADAM_CFG_PARAMS_MAP
+        ) adam_axil_aes_inst (
+            .seq   (hsdom_aes_seq),
+            .pause (hsdom_hsp_pause[1]),  
+            .axil  (hsdom_hsp_axil[1]),
+            .irq   (hsdom_hsp_irq[1])
+        );
+    end else begin
+        `ADAM_PAUSE_SLV_TIE_OFF(hsdom_hsp_pause[1]);
+        `ADAM_AXIL_SLV_TIE_OFF(hsdom_hsp_axil[1]);
+        assign hsdom_hsp_irq[1] = 1'b0;
+    end
+
+    for (genvar i = 2; i < NO_HSPS; i++) begin
         `ADAM_PAUSE_SLV_TIE_OFF(hsdom_hsp_pause[i]);
         `ADAM_AXIL_SLV_TIE_OFF (hsdom_hsp_axil [i]);
+        assign hsdom_hsp_irq[i] = 1'b0;
     end
-    // hsdom - aes ===========================================================
-
-    `ADAM_AXIL_I aes_axil ();
-
-    `ADAM_PAUSE_SLV_TIE_ON(aes_pause);
-
-    adam_axil_aes #(
-    `ADAM_CFG_PARAMS_MAP
-    ) adam_axil_aes_inst (
-        .seq   (hsdom_seq),
-        .pause (aes_pause), 
-        .axil  (aes_axil.Slave)
-    );
 
     // hsdom - debug ==========================================================
 
@@ -606,7 +612,6 @@ module adam #(
 
         .hsdom_mem       (hsdom_mem_axil),
         .hsdom_hsp       (hsdom_hsp_axil),
-        .hsdom_aes       (aes_axil),
         .hsdom_debug_mst (hsdom_debug_mst_axil)
     );
 

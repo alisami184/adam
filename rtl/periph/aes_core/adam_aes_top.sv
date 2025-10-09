@@ -13,7 +13,8 @@ module adam_aes_top(
            // Data ports.
            input  logic  [7 : 0]  address,
            input  logic  [31 : 0] write_data,
-           output logic [31 : 0]  read_data
+           output logic [31 : 0]  read_data,
+           output logic           irq
           );
 
   //----------------------------------------------------------------
@@ -79,6 +80,7 @@ module adam_aes_top(
   logic [127 : 0] core_block;
   logic [127 : 0] core_result;
   logic           core_valid;
+  logic           core_valid_q;
 
   //----------------------------------------------------------------
   // Concurrent connectivity for ports etc.
@@ -92,9 +94,10 @@ module adam_aes_top(
   assign core_start  = start_pulse;  // CHANGEMENT: utilise le pulse
   assign core_encdec = encdec_reg;
   assign core_keylen = keylen_reg;
+  assign irq         = core_valid & ~ core_valid_q;
 
   //----------------------------------------------------------------
-  // core instantiation.
+  // core instantiation
   //----------------------------------------------------------------
   adam_aes_core core(
                 .clk(clk),
@@ -111,6 +114,17 @@ module adam_aes_top(
                 .block(core_block),
                 .result(core_result)
                );
+
+  //----------------------------------------------------------------
+  // latch core_valid
+  //----------------------------------------------------------------
+  always_ff @(posedge clk or negedge reset_n)
+    begin
+      if (!reset_n)
+        core_valid_q <= 1'b0;
+      else
+        core_valid_q <= core_valid;
+    end
 
   //----------------------------------------------------------------
   // reg_update

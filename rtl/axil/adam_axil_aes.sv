@@ -14,7 +14,9 @@ module adam_axil_aes #(
     ADAM_SEQ.Slave   seq,
     ADAM_PAUSE.Slave pause,
 
-    AXI_LITE.Slave   axil
+    AXI_LITE.Slave   axil,
+
+    output logic irq
 );
 
     //----------------------------------------------------------------
@@ -81,6 +83,9 @@ module adam_axil_aes #(
     logic write_active, read_active;
     logic [7:0] write_addr, read_addr;
     DATA_T write_data_internal;
+    logic aes_irq;
+
+    assign irq = aes_irq;
 
     //----------------------------------------------------------------
     // AES Core instantiation
@@ -92,7 +97,8 @@ module adam_axil_aes #(
         .we(aes_we),
         .address(aes_address),
         .write_data(aes_write_data),
-        .read_data(aes_read_data)
+        .read_data(aes_read_data),
+        .irq(aes_irq)
     );
 
     //----------------------------------------------------------------
