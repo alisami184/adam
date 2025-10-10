@@ -17,6 +17,7 @@ void __attribute__((interrupt)) default_handler(void)
 int main() {
 
     volatile unsigned char c;
+    uint32_t status;
     c = 0;
     uint32_t key128[4]={
       0x2b7e1516,
@@ -40,6 +41,7 @@ int main() {
 
     aes_write_key(key128,4);
     aes_write_block(plaintext);
+    aes_read_status();
     aes_start();
 
     gpio_write(RAL.LSPA.GPIO[0], 0, 1);
