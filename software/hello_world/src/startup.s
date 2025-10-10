@@ -35,7 +35,7 @@ wait_mem1:
     li     t1, 1
     slli   t2, t1, 3 # Interrupt Enable (MIE)
     csrs   mstatus, t2
-    slli   t2, t1, 11 # Machine External Interrupt Enable (MEIE)
+    li     t2, -1 # Machine External Interrupt Enable (MEIE)
     csrs   mie, t2
 
 

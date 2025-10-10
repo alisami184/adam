@@ -220,7 +220,7 @@ module adam_aes_top(
                 ADDR_NAME0:   tmp_read_data = CORE_NAME0;
                 ADDR_NAME1:   tmp_read_data = CORE_NAME1;
                 ADDR_VERSION: tmp_read_data = CORE_VERSION;
-                ADDR_CTRL:    tmp_read_data = 32'h0;  // toujours 0 en lecture
+                ADDR_CTRL:    tmp_read_data = 32'h0; 
                 ADDR_STATUS:  tmp_read_data = {30'h0, valid_reg, ready_reg};
 
                 default: ;
