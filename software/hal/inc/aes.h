@@ -23,6 +23,5 @@ void aes_wait_for_result(void);
 void aes_read_result(uint32_t *result);
 uint32_t aes_read_status(void);
 bool aes_is_done(void);
-void __attribute__((interrupt("machine"))) aes_irq_handler(void);
 
 #endif // __AES_H__

@@ -4,15 +4,25 @@ static void hw_init(void);
 
 volatile int timer_interrupt_occurred = 0;
 volatile int pin_state = 1;
+volatile int aes_interrupt_occurred = 0;
 
 void __attribute__((interrupt)) default_handler(void)
 {
-    // Clear timer interrupt
-    RAL.LSPA.TIMER[0]->ER = ~0;
-    // Flag the interrupt
-    timer_interrupt_occurred = 1;
+    // Check AES
+    if (aes_is_done()) {
+        uint32_t result[4];
+        aes_read_result(result);
+        aes_interrupt_occurred = 1;
+        return;
+    }
+    
+    // Check Timer
+    if (RAL.LSPA.TIMER[0]->ER & 1) {
+        RAL.LSPA.TIMER[0]->ER = ~0;
+        timer_interrupt_occurred = 1;
+        return;
+    }
 }
-
 
 int main() {
 

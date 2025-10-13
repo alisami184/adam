@@ -36,7 +36,7 @@ wait_mem1:
     slli   t2, t1, 3 # Interrupt Enable (MIE)
     csrs   mstatus, t2
     li     t2, -1 # Machine External Interrupt Enable (MEIE)
-    csrs   mie, t2
+    csrw   mie, t2
 
 
 	# Set up Floating-Point
@@ -142,7 +142,7 @@ trap:
 	j irq_8_handler
 	j irq_9_handler
 	j irq_10_handler
-	j aes_irq_handler
+	j default_handler
 	j irq_12_handler
 	j irq_13_handler
 	j irq_14_handler
@@ -174,7 +174,7 @@ trap:
 .weak irq_8_handler
 .weak irq_9_handler
 .weak irq_10_handler
-.weak aes_irq_handler
+.weak default_handler
 .weak irq_12_handler
 .weak irq_13_handler
 .weak irq_14_handler

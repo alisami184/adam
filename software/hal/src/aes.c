@@ -1,5 +1,4 @@
 #include "aes.h"
-
 /**
  * @brief Configure l'AES : mode et longueur de clé
  * @param encrypt: AES_ENCRYPT (1) ou AES_DECRYPT (0)  
@@ -63,11 +62,3 @@ void aes_wait_for_result(void) {
     }
 }
 
-/* ISR appelé automatiquement par l’IRQ 11 (via startup.s) */
-void __attribute__((interrupt("machine"))) aes_irq_handler(void) {
-    /* 1) (optionnel) vérifier le DONE si besoin */
-    uint32_t ciphertext[4];
-
-    aes_read_result(ciphertext);
-
-}
