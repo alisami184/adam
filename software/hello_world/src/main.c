@@ -5,17 +5,18 @@ static void hw_init(void);
 volatile int timer_interrupt_occurred = 0;
 volatile int pin_state = 1;
 volatile int aes_interrupt_occurred = 0;
+volatile uint32_t aes_result[4];
 
 void __attribute__((interrupt)) default_handler(void)
 {
-    // Check AES
     if (aes_is_done()) {
-        uint32_t result[4];
-        aes_read_result(result);
+        aes_read_result((uint32_t*)aes_result);
+        //Clear the interrupt flag
+        aes_clear_interrupt();
         aes_interrupt_occurred = 1;
         return;
     }
-    
+
     // Check Timer
     if (RAL.LSPA.TIMER[0]->ER & 1) {
         RAL.LSPA.TIMER[0]->ER = ~0;
@@ -46,12 +47,17 @@ int main() {
     hw_init();
     uart_init(RAL.LSPA.UART[0], 115200);
     
-    // Configuration
+    // Initialize AES
+    aes_init();
     aes_config(AES_ENCRYPT, AES_KEYLEN_128);
-
-    aes_write_key(key128,4);
+    
+    // Enable AES interrupt
+    aes_enable_interrupt();
+    
+    // Write key and plaintext
+    aes_write_key(key128, 4);
     aes_write_block(plaintext);
-    aes_read_status();
+    
     aes_start();
 
     gpio_write(RAL.LSPA.GPIO[0], 0, 1);

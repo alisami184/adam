@@ -513,7 +513,7 @@ module adam_syscfg #(
     localparam IRQ_LSPB_S = IRQ_LSPA_E;
     localparam IRQ_LSPB_E = IRQ_LSPB_S + NO_LSPBS;
 
-    localparam IRQ_HSP_S = IRQ_LSPB_S;
+    localparam IRQ_HSP_S = IRQ_LSPB_E;
     localparam IRQ_HSP_E = IRQ_HSP_S + NO_HSPS;
 
     generate

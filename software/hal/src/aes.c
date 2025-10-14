@@ -1,4 +1,17 @@
 #include "aes.h"
+
+
+void aes_init(void) {
+    // Enable peripheral (bit 1 of CTRL register)
+    RAL.AES->CTRL = (1 << AES_CTRL_ENABLE_BIT);
+    
+    // Clear any pending events
+    RAL.AES->ER = ~0;
+    
+    // Disable interrupts by default (software can enable if needed)
+    RAL.AES->IER = 0;
+}
+
 /**
  * @brief Configure l'AES : mode et longueur de clé
  * @param encrypt: AES_ENCRYPT (1) ou AES_DECRYPT (0)  
@@ -40,25 +53,65 @@ void aes_write_block(uint32_t *block) {
 }
 
 void aes_start(void) {
-    RAL.AES->CTRL = (1 << CTRL_START_BIT);  // Set bit 0
+    // Clear any previous completion event before starting
+    RAL.AES->ER = (1 << AES_ER_DONE_BIT);
+    
+    // Trigger start (bit 0 of CTRL, with peripheral enabled on bit 1)
+    RAL.AES->CTRL = (1 << AES_CTRL_START_BIT) | (1 << AES_CTRL_ENABLE_BIT);
 }
 
+/**
+ * @brief Enable AES completion interrupt
+ */
+void aes_enable_interrupt(void) {
+    RAL.AES->IER = (1 << AES_IER_DONEIE_BIT);
+}
+
+/**
+ * @brief Disable AES completion interrupt
+ */
+void aes_disable_interrupt(void) {
+    RAL.AES->IER = 0;
+}
+
+/**
+ * @brief Clear AES interrupt flag (MUST be called in ISR)
+ * This is critical! Writing 1 to the event bit clears it
+ */
+void aes_clear_interrupt(void) {
+    RAL.AES->ER = (1 << AES_ER_DONE_BIT);  // Write 1 to clear
+}
+
+/**
+ * @brief Check if AES operation is complete
+ * @return true if done event flag is set
+ */
+bool aes_is_done(void) {
+    return (RAL.AES->ER & (1 << AES_ER_DONE_BIT)) != 0;
+}
+
+/**
+ * @brief Read status register
+ */
 uint32_t aes_read_status(void) {
     return RAL.AES->STATUS; 
 }
 
-bool aes_is_done(void) {
-    return (RAL.AES->STATUS & (1 << 1)) != 0;  // bit1 = 1 → opération terminée
+/**
+ * @brief Read event register
+ */
+uint32_t aes_read_events(void) {
+    return RAL.AES->ER;
 }
 
+/**
+ * @brief Read result (blocking - waits for completion)
+ * @param result: 4-word array to store the result
+ */
 void aes_read_result(uint32_t *result) {
     for (uint8_t i = 0; i < 4; i++) {
         result[i] = RAL.AES->RESULT[i];
     }
 }
 
-void aes_wait_for_result(void) {
-    while (!aes_is_done()) {
-    }
-}
 
