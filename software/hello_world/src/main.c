@@ -29,6 +29,8 @@ int main() {
 
     volatile unsigned char c;
     uint32_t status;
+    uint32_t tpr;
+    uint32_t tcr_value = 0x12345678;
     c = 0;
     uint32_t key128[4]={
       0x2b7e1516,
@@ -45,6 +47,10 @@ int main() {
     };
     
     hw_init();
+
+    asm volatile ("csrr %0, 0x7C0" : "=r"(tpr));
+    asm volatile ("csrw 0x7C1, %0" :: "r"(tcr_value));
+
     uart_init(RAL.LSPA.UART[0], 115200);
     
     // Initialize AES

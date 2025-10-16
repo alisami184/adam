@@ -21,6 +21,7 @@ extern void sleep(void);
 #include "timer.h"
 #include "sysctrl.h"
 #include "aes.h"
+#include "csr_dift.h"
 
 // Utils inc
 #include "types.h"
