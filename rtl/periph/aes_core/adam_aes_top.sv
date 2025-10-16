@@ -120,10 +120,10 @@ module adam_aes_top(
   assign core_encdec = encdec_reg;
   assign core_start  = start_pulse;
   assign core_keylen = keylen_reg;
-  assign core_key    = {key_reg[7], key_reg[6], key_reg[5], key_reg[4],
-                        key_reg[3], key_reg[2], key_reg[1], key_reg[0]};
-  assign core_block  = {block_reg[3], block_reg[2], block_reg[1], block_reg[0]};
-
+  assign core_key    = {key_reg[0], key_reg[1], key_reg[2], key_reg[3],
+                        key_reg[4], key_reg[5], key_reg[6], key_reg[7]};
+  assign core_block  = {block_reg[0], block_reg[1], block_reg[2], block_reg[3]};
+  
   // Detect rising edge of valid signal for event generation
   assign valid_posedge = core_valid && !core_valid_q;
 

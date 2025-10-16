@@ -191,7 +191,7 @@ module adam_top #(
 
     ADAM_JTAG jtag ();
 
-    assign jtag.trst_n = !rst;
+    assign jtag.trst_n = 1'b1;
 
     assign jtag.tck   = jtag_tck_i;
     assign jtag.tms   = jtag_tms_i;
