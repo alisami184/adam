@@ -28,7 +28,7 @@
 // Function prototype
 void aes_init(void);
 void aes_config(uint8_t encrypt, uint8_t keylen);
-void aes_write_key(uint32_t *key,uint8_t words);
+void aes_write_key(uint32_t *key, uint8_t keylen);
 void aes_write_block(uint32_t *block);
 void aes_enable_interrupt(void);
 void aes_disable_interrupt(void);

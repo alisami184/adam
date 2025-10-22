@@ -1,6 +1,5 @@
 #include "aes.h"
 
-
 void aes_init(void) {
     // Enable peripheral (bit 1 of CTRL register)
     RAL.AES->CTRL = (1 << AES_CTRL_ENABLE_BIT);
@@ -40,15 +39,19 @@ void aes_config(uint8_t encrypt, uint8_t keylen) {
  * @param words: 4 ou 8 selon la taille de la clé
  */
 
-void aes_write_key(uint32_t *key,uint8_t words) {   
-    for (uint8_t i=0; i < words; i++) {
-        RAL.AES->KEY[i] = key[i];
+void aes_write_key(uint32_t *key, uint8_t keylen)
+{
+    uint8_t words = (keylen == AES_KEYLEN_256) ? 8 : 4;
+
+    for (uint8_t i = 0; i < words; i++) {
+        RAL.AES->KEY = key[i];
     }
 }
 
+
 void aes_write_block(uint32_t *block) {   
-    for (uint8_t i=0; i < 4; i++) {
-        RAL.AES->BLOCK[i] = block[i];
+    for (int i = 0; i < 4; i++) {
+        RAL.AES->BLOCK = block[i];
     }
 }
 
@@ -110,8 +113,8 @@ uint32_t aes_read_events(void) {
  */
 void aes_read_result(uint32_t *result) {
     for (uint8_t i = 0; i < 4; i++) {
-        result[i] = RAL.AES->RESULT[i];
+        result[i] = RAL.AES->RESULT;
+        // Barrière mémoire FORTE : force chaque lecture séparée
+        __asm__ __volatile__ ("fence rw, rw" : : : "memory");
     }
 }
-
-

@@ -40,63 +40,80 @@ module adam_aes_top(
   localparam ADDR_IER         = 8'h10;
   localparam IER_DONEIE_BIT   = 0;
 
-  localparam ADDR_KEY0        = 8'h14;
-  localparam ADDR_KEY1        = 8'h18;
-  localparam ADDR_KEY2        = 8'h1C;
-  localparam ADDR_KEY3        = 8'h20;
-  localparam ADDR_KEY4        = 8'h24;
-  localparam ADDR_KEY5        = 8'h28;
-  localparam ADDR_KEY6        = 8'h2C;
-  localparam ADDR_KEY7        = 8'h30;
-
-  localparam ADDR_BLOCK0      = 8'h34;
-  localparam ADDR_BLOCK1      = 8'h38;
-  localparam ADDR_BLOCK2      = 8'h3C;
-  localparam ADDR_BLOCK3      = 8'h40;
-
-  localparam ADDR_RESULT0     = 8'h44;
-  localparam ADDR_RESULT1     = 8'h48;
-  localparam ADDR_RESULT2     = 8'h4C;
-  localparam ADDR_RESULT3     = 8'h50;
+  localparam ADDR_KEY         = 8'h14;
+  localparam ADDR_BLOCK       = 8'h18;
+  localparam ADDR_RESULT      = 8'h1C;
 
   //----------------------------------------------------------------
-  // Registers
+  // Registers 
   //----------------------------------------------------------------
-  logic              periph_enable_reg;
-  logic              start_pulse;
-
-  logic              encdec_reg;
-  logic              keylen_reg;
-
-  logic [31 : 0]     block_reg [0 : 3];
-  logic [31 : 0]     key_reg [0 : 7];
-
-  logic [127 : 0]    result_reg;
-  logic              valid_reg;
-  logic              ready_reg;
-
-  // Interrupt registers
+  logic [31 : 0]     ctrl_reg;
+  logic [31 : 0]     status_reg;
+  logic [31 : 0]     config_reg;
   logic [31 : 0]     events_reg;
   logic [31 : 0]     interrupt_enable_reg;
 
-  //----------------------------------------------------------------
-  // Wires
-  //----------------------------------------------------------------
+  logic [31 : 0]     block_reg [0 : 3];
+  logic [31 : 0]     key_reg [0 : 7];
+  logic [127 : 0]    result_reg;
+
+  // Counters
+  logic [2 : 0]      key_write_counter;
+  logic [2 : 0]      block_write_counter;
+  logic [2 : 0]      result_read_counter;
+
+  // Internal signals
+  logic              start_pulse;
+  logic              core_valid_q;
   logic [31 : 0]     tmp_read_data;
-  
+
+  //----------------------------------------------------------------
+  // ✅ Core interface signals (DÉCLARATIONS MANQUANTES)
+  //----------------------------------------------------------------
   logic              core_encdec;
   logic              core_start;
-  logic              core_ready;
-  logic [255 : 0]    core_key;
   logic              core_keylen;
+  logic [255 : 0]    core_key;
   logic [127 : 0]    core_block;
-  logic [127 : 0]    core_result;
+  logic              core_ready;
   logic              core_valid;
-  logic              core_valid_q;
-  logic              valid_posedge;
-  
-  logic              done_event;
-  logic              done_event_ie;
+  logic [127 : 0]    core_result;
+
+  //----------------------------------------------------------------
+  // Extract bit fields from registers
+  //----------------------------------------------------------------
+  logic periph_enable;
+  logic encdec;
+  logic keylen;
+  logic ready_bit;
+  logic valid_bit;
+  logic done_event;
+  logic done_event_ie;
+
+  assign periph_enable = ctrl_reg[CTRL_ENABLE_BIT];
+  assign encdec        = config_reg[CTRL_ENCDEC_BIT];
+  assign keylen        = config_reg[CTRL_KEYLEN_BIT];
+  assign ready_bit     = status_reg[STATUS_READY_BIT];
+  assign valid_bit     = status_reg[STATUS_VALID_BIT];
+  assign done_event    = events_reg[ER_DONE_BIT];
+  assign done_event_ie = interrupt_enable_reg[IER_DONEIE_BIT];
+
+  //----------------------------------------------------------------
+  // Core interface connections
+  //----------------------------------------------------------------
+  assign core_encdec = encdec;
+  assign core_start  = start_pulse;
+  assign core_keylen = keylen;
+  assign core_key    = {key_reg[0], key_reg[1], key_reg[2], key_reg[3],
+                        key_reg[4], key_reg[5], key_reg[6], key_reg[7]};
+  assign core_block  = {block_reg[0], block_reg[1], block_reg[2], block_reg[3]};
+
+  // Detect rising edge for event generation
+  logic valid_posedge;
+  assign valid_posedge = core_valid && !core_valid_q;
+
+  // IRQ generation
+  assign irq = periph_enable && done_event && done_event_ie;
 
   //----------------------------------------------------------------
   // Core instantiation
@@ -115,42 +132,28 @@ module adam_aes_top(
   );
 
   //----------------------------------------------------------------
-  // Concurrent assignments
-  //----------------------------------------------------------------
-  assign core_encdec = encdec_reg;
-  assign core_start  = start_pulse;
-  assign core_keylen = keylen_reg;
-  assign core_key    = {key_reg[0], key_reg[1], key_reg[2], key_reg[3],
-                        key_reg[4], key_reg[5], key_reg[6], key_reg[7]};
-  assign core_block  = {block_reg[0], block_reg[1], block_reg[2], block_reg[3]};
-  
-  // Detect rising edge of valid signal for event generation
-  assign valid_posedge = core_valid && !core_valid_q;
-
-  // Extract interrupt control signals
-  assign done_event    = events_reg[ER_DONE_BIT];
-  assign done_event_ie = interrupt_enable_reg[IER_DONEIE_BIT];
-
-  // IRQ generation: interrupt when peripheral enabled, event set, and interrupt enabled
-  assign irq = periph_enable_reg && done_event && done_event_ie;
-
-  //----------------------------------------------------------------
   // Register update logic
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      // Reset all registers
-      periph_enable_reg     <= 1'b0;
-      start_pulse           <= 1'b0;
-      encdec_reg            <= 1'b0;
-      keylen_reg            <= 1'b0;
-      result_reg            <= 128'h0;
-      valid_reg             <= 1'b0;
-      ready_reg             <= 1'b0;
-      core_valid_q          <= 1'b0;
+      // Reset all 32-bit registers
+      ctrl_reg              <= 32'h0;
+      status_reg            <= 32'h0;
+      config_reg            <= 32'h0;
       events_reg            <= 32'h0;
       interrupt_enable_reg  <= 32'h0;
+      result_reg            <= 128'h0;
       
+      // Reset counters
+      key_write_counter     <= 3'd0;
+      block_write_counter   <= 3'd0;
+      result_read_counter   <= 3'd0;
+      
+      // Reset internal signals
+      start_pulse           <= 1'b0;
+      core_valid_q          <= 1'b0;
+      
+      // Reset arrays
       for (int i = 0; i < 4; i++) begin
         block_reg[i] <= 32'h0;
       end
@@ -160,80 +163,84 @@ module adam_aes_top(
       end
       
     end else begin
-      // Update previous valid state for edge detection
+      // Update edge detection
       core_valid_q <= core_valid;
       
-      // Start pulse is single-cycle
-      start_pulse <= 1'b0;
+      if (start_pulse) begin
+        start_pulse <= 1'b0;
+      end
       
-      // Update status from core
-      ready_reg <= core_ready;
-      valid_reg <= core_valid;
+      // Update STATUS register from core (continuous update)
+      status_reg[STATUS_READY_BIT] <= core_ready;
+      status_reg[STATUS_VALID_BIT] <= core_valid;
       
       // Capture result when valid
       if (core_valid) begin
         result_reg <= core_result;
       end
 
-      // Set event flag on operation completion (rising edge of valid)
+      // Set event flag on operation completion
       if (valid_posedge) begin
         events_reg[ER_DONE_BIT] <= 1'b1;
       end
 
-      // Register write access
+      // Register WRITE access
       if (cs && we) begin
         case (address)
           
           ADDR_CTRL: begin
-            // Bit 0: Start (pulse)
             if (write_data[CTRL_START_BIT]) begin
               start_pulse <= 1'b1;
+              // Reset counters for new operation
+              key_write_counter   <= 3'd0;
+              block_write_counter <= 3'd0;
+              result_read_counter <= 3'd0;
             end
-            // Bit 1: Peripheral enable
-            periph_enable_reg <= write_data[CTRL_ENABLE_BIT];
+            
+            // Write CTRL register (ENABLE bit principalement)
+            ctrl_reg[CTRL_ENABLE_BIT] <= write_data[CTRL_ENABLE_BIT];
           end
           
           ADDR_CONFIG: begin
-            encdec_reg <= write_data[CTRL_ENCDEC_BIT];
-            keylen_reg <= write_data[CTRL_KEYLEN_BIT];
+            // Write entire CONFIG register
+            config_reg <= write_data;
           end
 
-          // Event Register - Write 1 to clear
           ADDR_ER: begin
-            if (write_data[ER_DONE_BIT]) begin
-              events_reg[ER_DONE_BIT] <= 1'b0;
-            end
+            // Write 1 to clear (W1C) for event bits
+            events_reg <= events_reg & ~write_data;
           end
 
-          // Interrupt Enable Register
           ADDR_IER: begin
+            // Write entire IER register
             interrupt_enable_reg <= write_data;
           end
           
-          // KEY registers
-          ADDR_KEY0: key_reg[0] <= write_data;
-          ADDR_KEY1: key_reg[1] <= write_data;
-          ADDR_KEY2: key_reg[2] <= write_data;
-          ADDR_KEY3: key_reg[3] <= write_data;
-          ADDR_KEY4: key_reg[4] <= write_data;
-          ADDR_KEY5: key_reg[5] <= write_data;
-          ADDR_KEY6: key_reg[6] <= write_data;
-          ADDR_KEY7: key_reg[7] <= write_data;
+          ADDR_KEY: begin
+            // Auto-increment write for KEY
+            key_reg[key_write_counter] <= write_data;
+            key_write_counter <= (key_write_counter == 3'd7) ? 3'd0 : key_write_counter + 3'd1;
+          end
+
+          ADDR_BLOCK: begin
+            // Auto-increment write for BLOCK
+            block_reg[block_write_counter] <= write_data;
+            block_write_counter <= (block_write_counter == 3'd3) ? 3'd0 : block_write_counter + 3'd1;
+          end
           
-          // BLOCK registers
-          ADDR_BLOCK0: block_reg[0] <= write_data;
-          ADDR_BLOCK1: block_reg[1] <= write_data;
-          ADDR_BLOCK2: block_reg[2] <= write_data;
-          ADDR_BLOCK3: block_reg[3] <= write_data;
-          
-          default: ; // Read-only or invalid registers
+          default: ;
         endcase
+      end
+      
+      // Register READ access - increment RESULT counter
+      if (cs && !we && address == ADDR_RESULT) begin
+        result_read_counter <= (result_read_counter == 3'd3) ? 3'd0 : result_read_counter + 3'd1;
       end
     end
   end
 
   //----------------------------------------------------------------
-  // Read logic
+  // Read logic (combinational)
   //----------------------------------------------------------------
   always_comb begin
     tmp_read_data = 32'h0;
@@ -242,49 +249,51 @@ module adam_aes_top(
       case (address)
         
         ADDR_CTRL: begin
-          tmp_read_data[CTRL_ENABLE_BIT] = periph_enable_reg;
-          // Start bit always reads as 0 (write-only pulse)
+          // Return full CTRL register, but START bit always reads as 0
+          tmp_read_data = ctrl_reg;
+          tmp_read_data[CTRL_START_BIT] = 1'b0;  // Start is write-only pulse
         end
         
         ADDR_STATUS: begin
-          tmp_read_data[STATUS_READY_BIT] = ready_reg;
-          tmp_read_data[STATUS_VALID_BIT] = valid_reg;
+          // Return full STATUS register (read-only)
+          tmp_read_data = status_reg;
         end
         
         ADDR_CONFIG: begin
-          tmp_read_data[CTRL_ENCDEC_BIT] = encdec_reg;
-          tmp_read_data[CTRL_KEYLEN_BIT] = keylen_reg;
+          // Return full CONFIG register
+          tmp_read_data = config_reg;
         end
 
         ADDR_ER: begin
+          // Return full Event Register
           tmp_read_data = events_reg;
         end
 
         ADDR_IER: begin
+          // Return full Interrupt Enable Register
           tmp_read_data = interrupt_enable_reg;
         end
         
-        // KEY registers (readable)
-        ADDR_KEY0: tmp_read_data = key_reg[0];
-        ADDR_KEY1: tmp_read_data = key_reg[1];
-        ADDR_KEY2: tmp_read_data = key_reg[2];
-        ADDR_KEY3: tmp_read_data = key_reg[3];
-        ADDR_KEY4: tmp_read_data = key_reg[4];
-        ADDR_KEY5: tmp_read_data = key_reg[5];
-        ADDR_KEY6: tmp_read_data = key_reg[6];
-        ADDR_KEY7: tmp_read_data = key_reg[7];
+        ADDR_KEY: begin
+          // KEY not readable (return 0 for security)
+          tmp_read_data = 32'h0;
+        end
         
-        // BLOCK registers (readable)
-        ADDR_BLOCK0: tmp_read_data = block_reg[0];
-        ADDR_BLOCK1: tmp_read_data = block_reg[1];
-        ADDR_BLOCK2: tmp_read_data = block_reg[2];
-        ADDR_BLOCK3: tmp_read_data = block_reg[3];
+        ADDR_BLOCK: begin
+          // BLOCK not readable (return 0)
+          tmp_read_data = 32'h0;
+        end
         
-        // RESULT registers (read-only)
-        ADDR_RESULT0: tmp_read_data = result_reg[127:96];
-        ADDR_RESULT1: tmp_read_data = result_reg[95:64];
-        ADDR_RESULT2: tmp_read_data = result_reg[63:32];
-        ADDR_RESULT3: tmp_read_data = result_reg[31:0];
+        ADDR_RESULT: begin
+          // Auto-increment read for RESULT
+          case (result_read_counter)
+            3'd0: tmp_read_data = result_reg[127:96];
+            3'd1: tmp_read_data = result_reg[95:64];
+            3'd2: tmp_read_data = result_reg[63:32];
+            3'd3: tmp_read_data = result_reg[31:0];
+            default: tmp_read_data = 32'h0;
+          endcase
+        end
         
         default: tmp_read_data = 32'h0;
       endcase

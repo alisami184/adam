@@ -25,12 +25,22 @@ void __attribute__((interrupt)) default_handler(void)
     }
 }
 
+#define read_csr(csr) ({ \
+    unsigned long __value; \
+    asm volatile ("csrr %0, %1" : "=r"(__value) : "i"(csr)); \
+    __value; \
+})
+
+#define write_csr(csr, value) ({ \
+    asm volatile ("csrw %0, %1" :: "i"(csr), "r"(value)); \
+})
+
+
 int main() {
 
     volatile unsigned char c;
-    uint32_t status;
-    uint32_t tpr;
-    uint32_t tcr_value = 0x12345678;
+    uint32_t tpr, tcr;
+
     c = 0;
     uint32_t key128[4]={
       0x2b7e1516,
@@ -48,8 +58,16 @@ int main() {
     
     hw_init();
 
-    asm volatile ("csrr %0, 0x7C0" : "=r"(tpr));
-    asm volatile ("csrw 0x7C1, %0" :: "r"(tcr_value));
+    // TPR test
+    tpr = read_csr(CSR_TPR);
+    write_csr(CSR_TPR, 0xDEADBEEF); // write new value
+    tpr = read_csr(CSR_TPR); // read back
+
+    // TCR test
+    tcr = read_csr(CSR_TCR);
+    write_csr(CSR_TCR, 0xDEADBAAF);
+    tcr = read_csr(CSR_TCR);
+
 
     uart_init(RAL.LSPA.UART[0], 115200);
     
@@ -61,7 +79,7 @@ int main() {
     aes_enable_interrupt();
     
     // Write key and plaintext
-    aes_write_key(key128, 4);
+    aes_write_key(key128,AES_KEYLEN_128);
     aes_write_block(plaintext);
     
     aes_start();

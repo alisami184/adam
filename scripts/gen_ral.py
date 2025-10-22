@@ -274,14 +274,11 @@ def build_aes_t(cfg):
     ier.add(Flag('DONEIE'))  # bit 0: done interrupt enable
     aes.add(ier)
     
-    # KEY registers (0x05-0x0C) - 8 registers for up to 256-bit key
-    aes.add(Register('KEY', 8))
+    aes.add(Register('KEY'))
     
-    # BLOCK registers (0x0D-0x10) - 4 registers for 128-bit block
-    aes.add(Register('BLOCK', 4))
+    aes.add(Register('BLOCK'))
     
-    # RESULT registers (0x11-0x14) - 4 registers for 128-bit result, read-only
-    aes.add(Register('RESULT', 4, read_only=True))
+    aes.add(Register('RESULT',read_only=True))
 
     return aes
 

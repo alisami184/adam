@@ -107,9 +107,9 @@ module adam_axil_aes #(
     function automatic logic addr_is_valid(input ADDR_T addr);
         case (addr[7:0])
             8'h00, 8'h04, 8'h08,8'h0C,8'h10,
-            8'h14,8'h18,8'h1C,8'h20,8'h24,8'h28,8'h2C,8'h30,   
-            8'h34, 8'h38, 8'h3C, 8'h40,   
-            8'h44, 8'h48, 8'h4C, 8'h50:   
+            8'h14,
+            8'h18, 
+            8'h1C:   
                 return 1'b1;
             default:
                 return 1'b0;
