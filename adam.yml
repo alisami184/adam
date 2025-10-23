@@ -36,6 +36,7 @@ targets:
     defines:
       ADAM_CORE_CPU: adam_core_cv32e40p
       ADAM_CORE_LPCPU: adam_core_ibex
+      ADAM_ROM: bootloader_rom
 
     rtl_fset:
       requires:
@@ -154,6 +155,7 @@ default:
     ADAM_CORE_CPU: adam_core_cv32e40p
     ADAM_CORE_LPCPU: adam_core_ibex
     ADAM_ROM: adam_mem
+    DIFT    : // Enable DIFT (Dynamic Information Flow Tracking)
 
   rtl_fset:
     requires:
@@ -423,14 +425,18 @@ fsets:
       - periph/uart/adam_periph_uart.sv
       - periph/adam_periph.sv
       - periph/adam_periph_hawkeye.sv
-      - periph/aes_core/adam_aes_core.sv
-      - periph/aes_core/adam_aes_decipher_block.sv
-      - periph/aes_core/adam_aes_encipher_block.sv
-      - periph/aes_core/adam_aes_inv_sbox.sv
-      - periph/aes_core/adam_aes_key_expansion.sv
-      - periph/aes_core/adam_aes_sbox.sv
+      #- periph/aes_core/adam_aes_decipher_block.sv
+      #- periph/aes_core/adam_aes_encipher_block.sv
+      #- periph/aes_core/adam_aes_inv_sbox.sv
+      #- periph/aes_core/adam_aes_key_expansion.sv
+      #- periph/aes_core/adam_aes_sbox.sv
       - periph/aes_core/adam_aes_top.sv
-      - periph/aes_core/adam_aes_core.sv
+      #- periph/aes_core/adam_aes_core.sv
+      - periph/aes_core/adam_aes_sbox_byte.sv
+      - periph/aes_core/adam_aes_round_module.sv
+      - periph/aes_core/adam_aes_encipher_fully_pipelined.sv
+      - periph/aes_core/adam_aes_key_expansion_pipelined.sv
+      - periph/aes_core/adam_aes_core_fully_pipelined.sv
 
 
       - syscfg/adam_syscfg_tgt.sv
@@ -793,6 +799,14 @@ fsets:
       - cv32e40p_obi_interface.sv
       - cv32e40p_popcnt.sv
       - cv32e40p_register_file_ff.sv
+      - cv32e40p_register_file_tag_ff.sv
+      - mode_tag.sv
+      - enable_tag.sv
+      - load_propagation.sv
+      - tag_propagation_logic.sv
+      - tag_check_logic.sv
+      - load_check.sv
+      - check_tag.sv
 
   fpnew_rtl:
     root: libs/cv32e40p/rtl/vendor/pulp_platform_fpnew

@@ -118,7 +118,7 @@ module adam_aes_top(
   //----------------------------------------------------------------
   // Core instantiation
   //----------------------------------------------------------------
-  adam_aes_core core(
+  adam_aes_core_fully_pipelined core(
     .clk(clk),
     .reset_n(reset_n),
     .encdec(core_encdec),
