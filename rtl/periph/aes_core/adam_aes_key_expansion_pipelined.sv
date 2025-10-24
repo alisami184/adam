@@ -94,26 +94,23 @@ module adam_aes_key_expansion_pipelined (
         for (int w = 0; w < 44; w++)
           words_reg[w] <= words_next[w];
       end
-      
-      // CRITIQUE: Écrire round_keys dans always_ff !
-      if (state_reg == INIT_ROUND0) begin
-        round_keys[0] <= {words_reg[0], words_reg[1], words_reg[2], words_reg[3]};
+            // On utilise state_next pour savoir si on vient de terminer APPLY_SBOX
+      if (state_reg == APPLY_SBOX && state_next == GEN_ROUND) begin
+        automatic int base_idx;
+        base_idx = round_ctr_reg * 4;
+        
+        // Utiliser words_next (qui vient d'être calculé) au lieu de words_reg
+        round_keys[round_ctr_reg] <= {
+          words_next[base_idx],
+          words_next[base_idx + 1],
+          words_next[base_idx + 2],
+          words_next[base_idx + 3]
+        };
       end
       
-      if (state_reg == APPLY_SBOX && round_ctr_reg <= 10) begin
-        automatic logic [31:0] subbed, rcon_word, w0_new, w1_new, w2_new, w3_new;
-        automatic int base_idx;
-        
-        base_idx = round_ctr_reg * 4;
-        subbed = {sbox_out[0], sbox_out[1], sbox_out[2], sbox_out[3]};
-        rcon_word = {get_rcon(round_ctr_reg), 24'h0};
-        
-        w0_new = words_reg[base_idx - 4] ^ subbed ^ rcon_word;
-        w1_new = words_reg[base_idx - 3] ^ w0_new;
-        w2_new = words_reg[base_idx - 2] ^ w1_new;
-        w3_new = words_reg[base_idx - 1] ^ w2_new;
-        
-        round_keys[round_ctr_reg] <= {w0_new, w1_new, w2_new, w3_new};
+      // Pour round_key[0], on l'assigne dans INIT_ROUND0
+      if (state_reg == INIT_ROUND0) begin
+        round_keys[0] <= {words_reg[0], words_reg[1], words_reg[2], words_reg[3]};
       end
     end
   end
