@@ -130,6 +130,7 @@ module adam_aes_core_fully_pipelined (
       //------------------------------------------------------------
       CTRL_IDLE: begin
         ready_next = 1'b1;
+        result_valid_next = 1'b0;
         
         if (start) begin
           key_init          = 1'b1;
