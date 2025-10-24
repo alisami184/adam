@@ -32,7 +32,7 @@ module adam_aes_round_module #(
   // Extract bytes from state (big-endian order)
   always_comb begin
     for (int i = 0; i < 16; i++) begin
-        sbox_in[i] = state_in[(i*8) +: 8];  // ← Little-endian
+      sbox_in[i] = state_in[(127 - i*8) -: 8];
     end
   end
   
@@ -50,7 +50,7 @@ module adam_aes_round_module #(
   // Reconstruct state after SubBytes
   always_comb begin
     for (int j = 0; j < 16; j++) begin
-      subbytes_out[(j*8) +: 8] = sbox_out[j];
+      subbytes_out[(127 - j*8) -: 8] = sbox_out[j];
     end
   end
   

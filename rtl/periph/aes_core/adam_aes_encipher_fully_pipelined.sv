@@ -27,7 +27,7 @@ module adam_aes_encipher_fully_pipelined (
   //----------------------------------------------------------------
   // Parameters
   //----------------------------------------------------------------
-  localparam LATENCY = 11;  // 11 cycles de latence totale
+  localparam LATENCY = 12;  // 11 cycles de latence totale
   
   //----------------------------------------------------------------
   // Pipeline stages (12 stages: 0 à 11)
