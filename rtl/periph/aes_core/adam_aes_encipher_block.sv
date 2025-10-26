@@ -1,31 +1,24 @@
 //======================================================================
-//
-// adam_aes_encipher_block.sv
-// --------------------
-// The AES encipher round. A pure combinational module that implements
-// the initial round, main round and final round logic for
-// enciper operations.
+// adam_aes_encipher_block.sv - OPTIMISÉ avec S-Box Parallèle
 //======================================================================
 
-
 module adam_aes_encipher_block(
-                          input logic            clk,
-                          input logic            reset_n,
+    input logic            clk,
+    input logic            reset_n,
 
-                          input logic            next,
+    input logic            next,
 
-                          input logic            keylen,
-                          output   [3 : 0]       round,
-                          input    [127 : 0]     round_key,
+    input logic            keylen,
+    output   [3 : 0]       round,
+    input    [127 : 0]     round_key,
 
-                          output   [31 : 0]      sboxw,
-                          input    [31 : 0]      new_sboxw,
+    output   [31 : 0]      sboxw,
+    input    [31 : 0]      new_sboxw,
 
-                          input    [127 : 0]     block,
-                          output   [127 : 0]     new_block,
-                          output logic           ready
-                         );
-
+    input    [127 : 0]     block,
+    output   [127 : 0]     new_block,
+    output logic           ready
+);
 
   //----------------------------------------------------------------
   // Internal constant and parameter definitions.
@@ -38,15 +31,14 @@ module adam_aes_encipher_block(
 
   localparam NO_UPDATE    = 3'h0;
   localparam INIT_UPDATE  = 3'h1;
-  localparam SBOX_UPDATE  = 3'h2;
+  localparam SBOX_UPDATE  = 3'h2;  
   localparam MAIN_UPDATE  = 3'h3;
   localparam FINAL_UPDATE = 3'h4;
 
   localparam CTRL_IDLE  = 2'h0;
   localparam CTRL_INIT  = 2'h1;
-  localparam CTRL_SBOX  = 2'h2;
+  localparam CTRL_SBOX  = 2'h2; 
   localparam CTRL_MAIN  = 2'h3;
-
 
   //----------------------------------------------------------------
   // Round functions with sub functions.
@@ -55,13 +47,13 @@ module adam_aes_encipher_block(
     begin
       gm2 = {op[6 : 0], 1'b0} ^ (8'h1b & {8{op[7]}});
     end
-  endfunction // gm2
+  endfunction
 
   function automatic [7 : 0] gm3(input [7 : 0] op);
     begin
       gm3 = gm2(op) ^ op;
     end
-  endfunction // gm3
+  endfunction
 
   function automatic [31 : 0] mixw(input [31 : 0] w);
     logic [7 : 0] b0, b1, b2, b3;
@@ -79,7 +71,7 @@ module adam_aes_encipher_block(
 
       mixw = {mb0, mb1, mb2, mb3};
     end
-  endfunction // mixw
+  endfunction
 
   function automatic [127 : 0] mixcolumns(input [127 : 0] data);
     logic [31 : 0] w0, w1, w2, w3;
@@ -97,7 +89,7 @@ module adam_aes_encipher_block(
 
       mixcolumns = {ws0, ws1, ws2, ws3};
     end
-  endfunction // mixcolumns
+  endfunction
 
   function automatic [127 : 0] shiftrows(input [127 : 0] data);
     logic [31 : 0] w0, w1, w2, w3;
@@ -115,19 +107,48 @@ module adam_aes_encipher_block(
 
       shiftrows = {ws0, ws1, ws2, ws3};
     end
-  endfunction // shiftrows
+  endfunction
 
   function automatic [127 : 0] addroundkey(input [127 : 0] data, input [127 : 0] rkey);
     begin
       addroundkey = data ^ rkey;
     end
-  endfunction // addroundkey
+  endfunction
 
+  //----------------------------------------------------------------
+  //  Fonction SubBytes parallèle avec 16 S-boxes
+  //----------------------------------------------------------------
+  logic [7:0] sbox_parallel_in [0:15];
+  logic [7:0] sbox_parallel_out [0:15];
+  logic [127:0] subbytes_result;
+
+  // Instancier 16 S-boxes en parallèle
+  genvar sb_idx;
+  generate
+    for (sb_idx = 0; sb_idx < 16; sb_idx++) begin : gen_parallel_sboxes
+      adam_aes_sbox_byte sbox_inst (
+        .sbox_byte_in(sbox_parallel_in[sb_idx]),
+        .sbox_byte_out(sbox_parallel_out[sb_idx])
+      );
+    end
+  endgenerate
+
+  // Fonction pour extraire les bytes et appliquer SubBytes
+  function automatic [127:0] subbytes_parallel(input [127:0] data);
+    logic [127:0] result;
+    integer i;
+    begin
+      // Cette fonction sera utilisée de manière combinatoire
+      // Les S-boxes sont déjà instanciées ci-dessus
+      result = data;  // Placeholder, les vraies connexions sont dans round_logic
+      subbytes_parallel = result;
+    end
+  endfunction
 
   //----------------------------------------------------------------
   // Registers including update variables and write enable.
   //----------------------------------------------------------------
-  logic [1 : 0]   sword_ctr_reg;
+  logic [1 : 0]   sword_ctr_reg; 
   logic [1 : 0]   sword_ctr_new;
   logic           sword_ctr_we;
   logic           sword_ctr_inc;
@@ -157,29 +178,22 @@ module adam_aes_encipher_block(
   logic [1 : 0]   enc_ctrl_new;
   logic           enc_ctrl_we;
 
-
   //----------------------------------------------------------------
   // Wires.
   //----------------------------------------------------------------
-  logic [2 : 0]  update_type;
-  logic [31 : 0] muxed_sboxw;
-
+  logic [31 : 0]  muxed_sboxw;
+  logic [2 : 0]   update_type;
 
   //----------------------------------------------------------------
   // Concurrent connectivity for ports etc.
   //----------------------------------------------------------------
   assign round     = round_ctr_reg;
-  assign sboxw     = muxed_sboxw;
   assign new_block = {block_w0_reg, block_w1_reg, block_w2_reg, block_w3_reg};
   assign ready     = ready_reg;
-
+  assign sboxw     = muxed_sboxw;
 
   //----------------------------------------------------------------
   // reg_update
-  //
-  // Update functionality for all registers in the core.
-  // All registers are positive edge triggered with asynchronous
-  // active low reset. All registers have write enable.
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n)
     begin: reg_update
@@ -220,13 +234,30 @@ module adam_aes_encipher_block(
           if (enc_ctrl_we)
             enc_ctrl_reg <= enc_ctrl_new;
         end
-    end // reg_update
+    end
 
+  //----------------------------------------------------------------
+  // Connexion des S-boxes parallèles
+  //----------------------------------------------------------------
+  logic [127:0] old_block_for_sbox;
+  assign old_block_for_sbox = {block_w0_reg, block_w1_reg, block_w2_reg, block_w3_reg};
+
+  // Connecter les 16 bytes aux S-boxes
+  always_comb begin
+    for (int i = 0; i < 16; i++) begin
+      sbox_parallel_in[i] = old_block_for_sbox[(i*8) +: 8];
+    end
+  end
+
+  // Récupérer les résultats
+  always_comb begin
+    for (int i = 0; i < 16; i++) begin
+      subbytes_result[(i*8) +: 8] = sbox_parallel_out[i];
+    end
+  end
 
   //----------------------------------------------------------------
   // round_logic
-  //
-  // The logic needed to implement init, main and final rounds.
   //----------------------------------------------------------------
   always_comb
     begin : round_logic
@@ -241,8 +272,11 @@ module adam_aes_encipher_block(
       block_w3_we = 1'b0;
 
       old_block          = {block_w0_reg, block_w1_reg, block_w2_reg, block_w3_reg};
-      shiftrows_block    = shiftrows(old_block);
+      
+      // shiftrows_block utilise directement subbytes_result
+      shiftrows_block    = shiftrows(subbytes_result);  // SubBytes déjà fait!
       mixcolumns_block   = mixcolumns(shiftrows_block);
+      
       addkey_init_block  = addroundkey(block, round_key);
       addkey_main_block  = addroundkey(mixcolumns_block, round_key);
       addkey_final_block = addroundkey(shiftrows_block, round_key);
@@ -259,33 +293,11 @@ module adam_aes_encipher_block(
 
         SBOX_UPDATE:
           begin
-            block_new = {new_sboxw, new_sboxw, new_sboxw, new_sboxw};
-
-            case (sword_ctr_reg)
-              2'h0:
-                begin
-                  muxed_sboxw = block_w0_reg;
-                  block_w0_we = 1'b1;
-                end
-
-              2'h1:
-                begin
-                  muxed_sboxw = block_w1_reg;
-                  block_w1_we = 1'b1;
-                end
-
-              2'h2:
-                begin
-                  muxed_sboxw = block_w2_reg;
-                  block_w2_we = 1'b1;
-                end
-
-              2'h3:
-                begin
-                  muxed_sboxw = block_w3_reg;
-                  block_w3_we = 1'b1;
-                end
-            endcase // case (sbox_mux_ctrl_reg)
+            block_new = subbytes_result;
+            block_w0_we  = 1'b1;
+            block_w1_we  = 1'b1;
+            block_w2_we  = 1'b1;
+            block_w3_we  = 1'b1;
           end
 
         MAIN_UPDATE:
@@ -309,14 +321,11 @@ module adam_aes_encipher_block(
         default:
           begin
           end
-      endcase // case (update_type)
-    end // round_logic
-
+      endcase
+    end
 
   //----------------------------------------------------------------
-  // sword_ctr
-  //
-  // The subbytes word counter with reset and increase logic.
+  // sword_ctr 
   //----------------------------------------------------------------
   always_comb
     begin : sword_ctr
@@ -333,13 +342,10 @@ module adam_aes_encipher_block(
           sword_ctr_new = sword_ctr_reg + 1'b1;
           sword_ctr_we  = 1'b1;
         end
-    end // sword_ctr
-
+    end
 
   //----------------------------------------------------------------
   // round_ctr
-  //
-  // The round counter with reset and increase logic.
   //----------------------------------------------------------------
   always_comb
     begin : round_ctr
@@ -353,16 +359,13 @@ module adam_aes_encipher_block(
         end
       else if (round_ctr_inc)
         begin
-          round_ctr_new = round_ctr_reg + 1'b1;
+          round_ctr_new = round_ctr_reg + 4'h1;
           round_ctr_we  = 1'b1;
         end
-    end // round_ctr
-
+    end
 
   //----------------------------------------------------------------
-  // encipher_ctrl
-  //
-  // The FSM that controls the encipher operations.
+  // encipher_ctrl 
   //----------------------------------------------------------------
   always_comb
     begin: encipher_ctrl
@@ -380,13 +383,9 @@ module adam_aes_encipher_block(
       enc_ctrl_we   = 1'b0;
 
       if (keylen == AES_256_BIT_KEY)
-        begin
-          num_rounds = AES256_ROUNDS;
-        end
+        num_rounds = AES256_ROUNDS;
       else
-        begin
-          num_rounds = AES128_ROUNDS;
-        end
+        num_rounds = AES128_ROUNDS;
 
       case(enc_ctrl_reg)
         CTRL_IDLE:
@@ -404,31 +403,26 @@ module adam_aes_encipher_block(
         CTRL_INIT:
           begin
             round_ctr_inc = 1'b1;
-            sword_ctr_rst = 1'b1;
             update_type   = INIT_UPDATE;
-            enc_ctrl_new  = CTRL_SBOX;
+            enc_ctrl_new  = CTRL_SBOX;  // Aller direct à SBOX
             enc_ctrl_we   = 1'b1;
           end
 
+        //  SBOX fait tout en 1 cycle, puis direct à MAIN
         CTRL_SBOX:
           begin
-            sword_ctr_inc = 1'b1;
-            update_type   = SBOX_UPDATE;
-            if (sword_ctr_reg == 2'h3)
-              begin
-                enc_ctrl_new  = CTRL_MAIN;
-                enc_ctrl_we   = 1'b1;
-              end
+            update_type   = SBOX_UPDATE; 
+            enc_ctrl_new  = CTRL_MAIN;   
+            enc_ctrl_we   = 1'b1;
           end
 
         CTRL_MAIN:
           begin
-            sword_ctr_rst = 1'b1;
             round_ctr_inc = 1'b1;
             if (round_ctr_reg < num_rounds)
               begin
                 update_type   = MAIN_UPDATE;
-                enc_ctrl_new  = CTRL_SBOX;
+                enc_ctrl_new  = CTRL_SBOX;  // Retour à SBOX (1 cycle)
                 enc_ctrl_we   = 1'b1;
               end
             else
@@ -443,12 +437,11 @@ module adam_aes_encipher_block(
 
         default:
           begin
-            // Empty. Just here to make the synthesis tool happy.
           end
-      endcase // case (enc_ctrl_reg)
-    end // encipher_ctrl
+      endcase
+    end
 
-endmodule // aes_encipher_block
+endmodule
 
 //======================================================================
 // EOF adam_aes_encipher_block.sv
