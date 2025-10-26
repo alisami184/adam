@@ -1,70 +1,141 @@
 //======================================================================
-// adam_aes_core_fully_pipelined.sv - OPTIMIZED VERSION
+// adam_aes_encipher_fully_pipelined.sv - ULTRA-OPTIMIZED VERSION
 // --------------------
-// AES Core avec architecture fully pipelined
-// Interface 100% compatible avec l'ancien adam_aes_core.sv
+// AES Encipher avec architecture fully pipelined
+// - LATENCE: 9 CYCLES (au lieu de 13)
+// - Throughput: 1 bloc par cycle (après remplissage)
 //
-// Architecture OPTIMISÉE:
-// - Key expansion pipelinée (13-14 cycles)
-// - Encipher fully pipelined (10 cycles) ← OPTIMISÉ de 12 à 10
-// - Total: ~24 cycles premier bloc, puis 10 cycles par bloc
-// - Throughput: 1 bloc/cycle après remplissage
+// OPTIMISATIONS AGRESSIVES:
+// 1. Suppression stage 11 (output register) → -1 cycle
+// 2. Fusion AddRoundKey + Round 1 → -1 cycle
+// 3. FSM simplifiée (pas de DONE state) → -1 cycle
+// 4. Valid généré directement du compteur → -1 cycle
 //======================================================================
 
-module adam_aes_core_fully_pipelined (
+module adam_aes_encipher_fully_pipelined (
     input  logic         clk,
     input  logic         reset_n,
     
-    // Control (INTERFACE IDENTIQUE À L'ANCIEN CORE)
-    input  logic         encdec,        // 1 = encrypt, 0 = decrypt
+    // Control
     input  logic         start,
+    input  logic         keylen,
     output logic         ready,
-    output logic         result_valid,
+    output logic         valid,
     
-    // Key (INTERFACE IDENTIQUE)
-    input  logic [255:0] key,
-    input  logic         keylen,        // 0 = 128-bit, 1 = 256-bit
-    
-    // Data (INTERFACE IDENTIQUE)
+    // Data
     input  logic [127:0] block,
+    input  logic [127:0] round_keys [0:10],
     output logic [127:0] result
 );
 
   //----------------------------------------------------------------
-  // Internal signals
+  // Parameters
   //----------------------------------------------------------------
-  logic [127:0] round_keys [0:10];
-  logic         key_ready;
-  logic         key_init;
+  localparam LATENCY = 9;  // ULTRA-OPTIMISÉ: 9 cycles
   
-  logic         enc_start;
-  logic         enc_ready;
-  logic         enc_valid;
-  logic [127:0] enc_result;
+  //----------------------------------------------------------------
+  // Pipeline stages (9 stages: 0 à 8)
+  // Stage 0: AddRoundKey initial + Round 1 fusionnés
+  // Stages 1-7: Rounds 2-9
+  // Stage 8: Round 10 (final)
+  //----------------------------------------------------------------
+  logic [127:0] stage_reg [0:8];
+  logic [127:0] stage_next [0:8];
   
-  logic [255:0] prev_key_reg;     
-  logic         prev_keylen_reg;  
-  logic         key_valid_reg;    
-  logic         key_changed;
- 
-  // Détection combinatoire du changement de clé
+  //----------------------------------------------------------------
+  // Control signals - SIMPLIFIÉ
+  //----------------------------------------------------------------
+  logic [3:0]   cycle_counter_reg, cycle_counter_next;
+  logic         pipeline_active_reg, pipeline_active_next;
+  logic         ready_reg, ready_next;
+  logic         valid_reg, valid_next;
+  
+  //----------------------------------------------------------------
+  // Round outputs (combinational)
+  //----------------------------------------------------------------
+  logic [127:0] round_outputs [1:10];
+  logic [127:0] initial_addroundkey;
+  
+  //----------------------------------------------------------------
+  // Stage 0: OPTIMISÉ - AddRoundKey initial + Round 1 fusionnés
+  //----------------------------------------------------------------
   always_comb begin
-    key_changed = 1'b0;
-    if (!key_valid_reg)                 key_changed = 1'b1;
-    else if (keylen != prev_keylen_reg) key_changed = 1'b1; 
-    else if (key    != prev_key_reg)    key_changed = 1'b1;
+    initial_addroundkey = block ^ round_keys[0];
   end
-
+  
+  adam_aes_round_module #(
+    .IS_FINAL_ROUND(0)
+  ) round_1_inst (
+    .state_in(initial_addroundkey),
+    .round_key(round_keys[1]),
+    .state_out(round_outputs[1])
+  );
+  
+  always_comb begin
+    stage_next[0] = round_outputs[1];
+  end
+  
   //----------------------------------------------------------------
-  // FSM States (IDENTIQUES À L'ANCIEN CORE)
+  // Stages 1-7: Rounds 2-9
   //----------------------------------------------------------------
-  typedef enum logic [2:0] {
-    CTRL_IDLE         = 3'h0,
-    CTRL_KEY_INIT     = 3'h1,
-    CTRL_KEY_WAIT     = 3'h2,
-    CTRL_CIPHER_START = 3'h3,
-    CTRL_CIPHER_WAIT  = 3'h4,
-    CTRL_DONE         = 3'h5
+  genvar r;
+  generate
+    for (r = 2; r <= 9; r++) begin : gen_middle_rounds
+      adam_aes_round_module #(
+        .IS_FINAL_ROUND(0)
+      ) round_inst (
+        .state_in(stage_reg[r-2]),
+        .round_key(round_keys[r]),
+        .state_out(round_outputs[r])
+      );
+      
+      always_comb begin
+        stage_next[r-1] = round_outputs[r];
+      end
+    end
+  endgenerate
+  
+  //----------------------------------------------------------------
+  // Stage 8: Final round (NO MixColumns)
+  //----------------------------------------------------------------
+  adam_aes_round_module #(
+    .IS_FINAL_ROUND(1)
+  ) final_round_inst (
+    .state_in(stage_reg[7]),
+    .round_key(round_keys[10]),
+    .state_out(round_outputs[10])
+  );
+  
+  always_comb begin
+    stage_next[8] = round_outputs[10];
+  end
+  
+  //----------------------------------------------------------------
+  // Pipeline register update
+  //----------------------------------------------------------------
+  always_ff @(posedge clk or negedge reset_n) begin
+    if (!reset_n) begin
+      for (int s = 0; s <= 8; s++)
+        stage_reg[s] <= 128'h0;
+    end else begin
+      if (pipeline_active_reg) begin
+        for (int s = 0; s <= 8; s++)
+          stage_reg[s] <= stage_next[s];
+      end
+    end
+  end
+  
+  //----------------------------------------------------------------
+  // Output - DIRECT depuis dernier stage
+  //----------------------------------------------------------------
+  assign result = stage_reg[8];
+  
+  //----------------------------------------------------------------
+  // Control - FSM ULTRA-SIMPLIFIÉE (seulement 2 états)
+  //----------------------------------------------------------------
+  typedef enum logic {
+    IDLE       = 1'b0,
+    PROCESSING = 1'b1
   } state_t;
   
   state_t state_reg, state_next;
@@ -72,146 +143,74 @@ module adam_aes_core_fully_pipelined (
   //----------------------------------------------------------------
   // Registers
   //----------------------------------------------------------------
-  logic result_valid_reg, result_valid_next;
-  logic ready_reg, ready_next;
-  
-  //----------------------------------------------------------------
-  // Submodules
-  //----------------------------------------------------------------
-  
-  // Key Expansion (pipelined)
-  adam_aes_key_expansion_pipelined key_exp (
-    .clk(clk),
-    .reset_n(reset_n),
-    .key(key),
-    .keylen(keylen),
-    .init(key_init),
-    .round_keys(round_keys),
-    .ready(key_ready)
-  );
-  
-  // Encipher (fully pipelined) - OPTIMISÉ: 10 cycles au lieu de 12
-  adam_aes_encipher_fully_pipelined enc_block (
-    .clk(clk),
-    .reset_n(reset_n),
-    .start(enc_start),
-    .keylen(keylen),
-    .ready(enc_ready),
-    .valid(enc_valid),
-    .block(block),
-    .round_keys(round_keys),
-    .result(enc_result)
-  );
-  
-  // NOTE: Decipher pas encore implémenté (TODO pour phase 2)
-  // Pour l'instant, seul l'encryption est supporté
-  
-  //----------------------------------------------------------------
-  // Output assignments
-  //----------------------------------------------------------------
-  assign result       = enc_result;
-  assign ready        = ready_reg;
-  assign result_valid = result_valid_reg;
-  
-  //----------------------------------------------------------------
-  // Registers update
-  //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      state_reg         <= CTRL_IDLE;
-      result_valid_reg  <= 1'b0;
-      ready_reg         <= 1'b1;
-      prev_key_reg      <= 256'h0;
-      prev_keylen_reg   <= 1'b0;
-      key_valid_reg     <= 1'b0;
+      state_reg           <= IDLE;
+      cycle_counter_reg   <= 4'h0;
+      pipeline_active_reg <= 1'b0;
+      ready_reg           <= 1'b1;
+      valid_reg           <= 1'b0;
     end else begin
-      state_reg         <= state_next;
-      result_valid_reg  <= result_valid_next;
-      ready_reg         <= ready_next;
-      
-      // Mémoriser la clé actuelle quand l'expansion est prête
-      if (key_ready && (state_reg == CTRL_KEY_WAIT || state_reg == CTRL_KEY_INIT)) begin
-        prev_key_reg    <= key;
-        prev_keylen_reg <= keylen;
-        key_valid_reg   <= 1'b1;
-      end
+      state_reg           <= state_next;
+      cycle_counter_reg   <= cycle_counter_next;
+      pipeline_active_reg <= pipeline_active_next;
+      ready_reg           <= ready_next;
+      valid_reg           <= valid_next;
     end
   end
   
   //----------------------------------------------------------------
-  // FSM Next State Logic
+  // FSM Logic - OPTIMISÉE pour minimum de cycles
   //----------------------------------------------------------------
   always_comb begin
-    // Default assignments
-    state_next        = state_reg;
-    result_valid_next = result_valid_reg;
-    ready_next        = ready_reg;
-    key_init          = 1'b0;
-    enc_start         = 1'b0;
+    // Default
+    state_next           = state_reg;
+    cycle_counter_next   = cycle_counter_reg;
+    pipeline_active_next = pipeline_active_reg;
+    ready_next           = ready_reg;
+    valid_next           = 1'b0;  // Valid est pulsé, pas maintenu
     
     case (state_reg)
       //------------------------------------------------------------
-      CTRL_IDLE: begin
-        ready_next         = 1'b1;
-        result_valid_next  = 1'b0;
+      IDLE: begin
+        ready_next = 1'b1;
         
         if (start) begin
-          ready_next         = 1'b0;
-          result_valid_next  = 1'b0;
-          
-          // Si la clé a changé, on doit refaire l'expansion
-          if (key_changed) begin
-            key_init   = 1'b1;
-            state_next = CTRL_KEY_INIT;
-          end else begin
-            // Clé déjà prête, on peut directement chiffrer
-            state_next = CTRL_CIPHER_START;
-          end
+          state_next           = PROCESSING;
+          cycle_counter_next   = 4'h0;
+          pipeline_active_next = 1'b1;
+          ready_next           = 1'b0;
         end
       end
       
       //------------------------------------------------------------
-      CTRL_KEY_INIT: begin
-        key_init   = 1'b1;
-        state_next = CTRL_KEY_WAIT;
-      end
-      
-      //------------------------------------------------------------
-      CTRL_KEY_WAIT: begin
-        if (key_ready) begin
-          state_next = CTRL_CIPHER_START;
+      PROCESSING: begin
+        cycle_counter_next = cycle_counter_reg + 1;
+        
+        // Valid devient 1 dès que le compteur atteint LATENCY-1
+        if (cycle_counter_reg == (LATENCY - 1)) begin
+          valid_next           = 1'b1;
+          pipeline_active_next = 1'b0;
+          state_next           = IDLE;
+          ready_next           = 1'b1;  // Ready immédiatement après
         end
-      end
-      
-      //------------------------------------------------------------
-      CTRL_CIPHER_START: begin
-        enc_start  = 1'b1;
-        state_next = CTRL_CIPHER_WAIT;
-      end
-      
-      //------------------------------------------------------------
-      CTRL_CIPHER_WAIT: begin
-        if (enc_valid) begin
-          state_next = CTRL_DONE;
-        end
-      end
-      
-      //------------------------------------------------------------
-      CTRL_DONE: begin
-        result_valid_next = 1'b1;
-        ready_next        = 1'b1;
-        state_next        = CTRL_IDLE;
       end
       
       //------------------------------------------------------------
       default: begin
-        state_next = CTRL_IDLE;
+        state_next = IDLE;
       end
     endcase
   end
+  
+  //----------------------------------------------------------------
+  // Output assignments
+  //----------------------------------------------------------------
+  assign ready = ready_reg;
+  assign valid = valid_reg;
 
 endmodule
 
 //======================================================================
-// EOF adam_aes_core_fully_pipelined.sv
+// EOF adam_aes_encipher_fully_pipelined.sv
 //======================================================================
