@@ -68,7 +68,7 @@ module adam_aes_top(
   logic [31 : 0]     tmp_read_data;
 
   //----------------------------------------------------------------
-  // ✅ Core interface signals (DÉCLARATIONS MANQUANTES)
+  // Core interface signals
   //----------------------------------------------------------------
   logic              core_encdec;
   logic              core_start;
@@ -118,7 +118,7 @@ module adam_aes_top(
   //----------------------------------------------------------------
   // Core instantiation
   //----------------------------------------------------------------
-  adam_aes_core_fully_pipelined core(
+  adam_aes_core core(
     .clk(clk),
     .reset_n(reset_n),
     .encdec(core_encdec),

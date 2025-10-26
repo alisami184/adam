@@ -4,8 +4,12 @@ static void hw_init(void);
 
 volatile int timer_interrupt_occurred = 0;
 volatile int pin_state = 1;
-volatile int aes_interrupt_occurred = 0;
 volatile uint32_t aes_result[4];
+uint32_t plaintext_1[4]={
+      0xae2d8a57,
+      0x1e03ac9c,
+      0x9eb76fac,
+      0x45af8e51};
 
 void __attribute__((interrupt)) default_handler(void)
 {
@@ -13,7 +17,8 @@ void __attribute__((interrupt)) default_handler(void)
         aes_read_result((uint32_t*)aes_result);
         //Clear the interrupt flag
         aes_clear_interrupt();
-        aes_interrupt_occurred = 1;
+        aes_write_block(plaintext_1);
+        aes_start();
         return;
     }
 
@@ -55,7 +60,8 @@ int main() {
       0xe93d7e11,
       0x7393172a
     };
-    
+  
+
     hw_init();
 
     // TPR test

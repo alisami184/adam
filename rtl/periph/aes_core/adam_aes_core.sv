@@ -1,5 +1,6 @@
 //======================================================================
-// AES Core - Logique de contrôle
+// AES Core - Logique de contrôle avec détection de changement de clé
+// ✅ OPTIMISATION: Skip key expansion si la clé n'a pas changé
 //======================================================================
 
 module adam_aes_core (
@@ -43,6 +44,10 @@ module adam_aes_core (
   logic       init_key_expansion;   // trigger key expansion
   logic       start_cipher;         // trigger cipher operation
 
+  logic [255:0] prev_key_reg;       // Clé précédente
+  logic         prev_keylen_reg;    // Longueur précédente
+  logic         key_valid_reg;      // La key expansion est faite pour cette clé
+
   //----------------------------------------------------------------
   // Submodule connections
   //----------------------------------------------------------------
@@ -67,6 +72,26 @@ module adam_aes_core (
   logic [31:0]  keymem_sboxw;
   logic [31:0]  muxed_sboxw;
   logic [31:0]  new_sboxw;
+
+  //----------------------------------------------------------------
+  //  Détection de changement de clé
+  //----------------------------------------------------------------
+  logic key_changed;
+  
+  always_comb begin
+    key_changed = 1'b0;
+    
+    if (!key_valid_reg) begin
+      // Première utilisation : key expansion nécessaire
+      key_changed = 1'b1;
+    end else if (keylen != prev_keylen_reg) begin
+      // La longueur a changé : key expansion nécessaire
+      key_changed = 1'b1;
+    end else if (key != prev_key_reg) begin
+      // La clé a changé : key expansion nécessaire
+      key_changed = 1'b1;
+    end
+  end
 
   //----------------------------------------------------------------
   // Instantiations
@@ -124,6 +149,12 @@ module adam_aes_core (
       result_valid_reg <= 1'b0;
       ready_reg        <= 1'b1;
       state_reg        <= CTRL_IDLE;
+      
+      // Reset des registres de clé
+      prev_key_reg     <= 256'h0;
+      prev_keylen_reg  <= 1'b0;
+      key_valid_reg    <= 1'b0;
+      
     end else begin
       if (result_valid_we)
         result_valid_reg <= result_valid_new;
@@ -132,6 +163,19 @@ module adam_aes_core (
         ready_reg <= ready_new;
 
       state_reg <= state_new;
+      
+      // Mise à jour des registres de clé
+      // Quand on démarre une key expansion
+      if (state_reg == CTRL_IDLE && start && key_changed) begin
+        prev_key_reg    <= key;
+        prev_keylen_reg <= keylen;
+        key_valid_reg   <= 1'b0;  // Marquer comme invalide
+      end
+      
+      // Quand la key expansion est terminée
+      if (state_reg == CTRL_KEY_WAIT && key_ready) begin
+        key_valid_reg <= 1'b1;  // Marquer comme valide
+      end
     end
   end
 
@@ -166,7 +210,7 @@ module adam_aes_core (
   end
 
   //----------------------------------------------------------------
-  // Control FSM -  Key Init -> Key Wait -> Cipher -> Done
+  // Control FSM
   //----------------------------------------------------------------
   always_comb begin
     // Default values
@@ -182,13 +226,20 @@ module adam_aes_core (
       //------------------------------------------------------------
       CTRL_IDLE: begin
         if (start) begin
-          // Commencer par l'expansion de clé
-          init_key_expansion = 1'b1;
-          ready_new          = 1'b0;
-          ready_we           = 1'b1;
-          result_valid_new   = 1'b0;  // Clear previous result
-          result_valid_we    = 1'b1;
-          state_new          = CTRL_KEY_INIT;
+          ready_new        = 1'b0;
+          ready_we         = 1'b1;
+          result_valid_new = 1'b0;  // Clear previous result
+          result_valid_we  = 1'b1;
+          
+          // Skip key expansion si clé n'a pas changé
+          if (key_changed) begin
+            // La clé a changé → faire key expansion
+            init_key_expansion = 1'b1;
+            state_new          = CTRL_KEY_INIT;
+          end else begin
+            // La clé n'a pas changé → chiffrer directement
+            state_new = CTRL_CIPHER_START;
+          end
         end
       end
 
