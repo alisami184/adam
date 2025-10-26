@@ -1,6 +1,5 @@
 //======================================================================
-// AES Core - Logique de contrôle avec détection de changement de clé
-// ✅ OPTIMISATION: Skip key expansion si la clé n'a pas changé
+// AES Core
 //======================================================================
 
 module adam_aes_core (
@@ -231,7 +230,7 @@ module adam_aes_core (
           result_valid_new = 1'b0;  // Clear previous result
           result_valid_we  = 1'b1;
           
-          // Skip key expansion si clé n'a pas changé
+          // ✅ OPTIMISATION: Skip key expansion si clé n'a pas changé
           if (key_changed) begin
             // La clé a changé → faire key expansion
             init_key_expansion = 1'b1;

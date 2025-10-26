@@ -42,6 +42,19 @@ module adam_aes_core_fully_pipelined (
   logic         enc_valid;
   logic [127:0] enc_result;
   
+  logic [255:0] prev_key_reg;     
+  logic         prev_keylen_reg;  
+  logic         key_valid_reg;    
+  logic         key_changed;
+ 
+  // Détection combinatoire
+  always_comb begin
+    key_changed = 1'b0;
+    if (!key_valid_reg)                 key_changed = 1'b1;
+    else if (keylen != prev_keylen_reg) key_changed = 1'b1; 
+    else if (key    != prev_key_reg)    key_changed = 1'b1;
+  end
+
   //----------------------------------------------------------------
   // FSM States (IDENTIQUES À L'ANCIEN CORE)
   //----------------------------------------------------------------
@@ -108,15 +121,30 @@ module adam_aes_core_fully_pipelined (
       state_reg        <= CTRL_IDLE;
       result_valid_reg <= 1'b0;
       ready_reg        <= 1'b1;
+      prev_key_reg      <= '0;
+      prev_keylen_reg   <= 1'b0;
+      key_valid_reg     <= 1'b0;
+
     end else begin
       state_reg        <= state_next;
       result_valid_reg <= result_valid_next;
       ready_reg        <= ready_next;
+
+      if (state_reg == CTRL_IDLE && start && key_changed) begin
+        prev_key_reg    <= key;
+        prev_keylen_reg <= keylen;
+        key_valid_reg   <= 1'b0;
+      end
+      // Quand la key expansion est prête (toutes round_keys prêtes)
+      if (state_reg == CTRL_KEY_WAIT && key_ready) begin
+        key_valid_reg <= 1'b1;
+      end
+
     end
   end
   
   //----------------------------------------------------------------
-  // Control FSM (IDENTIQUE À L'ANCIEN CORE !)
+  // Control FSM 
   //----------------------------------------------------------------
   always_comb begin
     // Default values
@@ -130,13 +158,21 @@ module adam_aes_core_fully_pipelined (
       //------------------------------------------------------------
       CTRL_IDLE: begin
         ready_next = 1'b1;
-        result_valid_next = 1'b0;
         
         if (start) begin
           key_init          = 1'b1;
           ready_next        = 1'b0;
           result_valid_next = 1'b0;
           state_next        = CTRL_KEY_INIT;
+          ready_next         = 1'b0;
+          result_valid_next  = 1'b0;
+          if (key_changed) begin
+            key_init   = 1'b1;
+            state_next = CTRL_KEY_INIT;
+          end else begin
+            state_next = CTRL_CIPHER_START;
+          end
+
         end
       end
       
