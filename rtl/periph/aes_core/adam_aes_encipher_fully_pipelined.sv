@@ -39,7 +39,6 @@ module adam_aes_encipher_fully_pipelined (
   logic [127:0] stage_reg [0:11];
   logic [127:0] stage_next [0:11];
   logic [11:0]  stage_we;
-
   
   //----------------------------------------------------------------
   // Control signals
@@ -59,31 +58,17 @@ module adam_aes_encipher_fully_pipelined (
   state_t state_reg, state_next;
   logic   ready_reg, ready_next;
   logic   valid_reg, valid_next;
-  logic [127:0] block_captured;
-  logic [127:0] round_keys_captured [0:10];
+  
+  //----------------------------------------------------------------
+  // Round outputs (combinational)
+  //----------------------------------------------------------------
   logic [127:0] round_outputs [1:10];
-
-    // ✅ AJOUTER: Capture au start
-  always_ff @(posedge clk or negedge reset_n) begin
-    if (!reset_n) begin
-      block_captured <= 128'h0;
-      for (int i = 0; i <= 10; i++)
-        round_keys_captured[i] <= 128'h0;
-    end else begin
-      if (start && ready_reg) begin
-        block_captured <= block;
-        for (int i = 0; i <= 10; i++)
-          round_keys_captured[i] <= round_keys[i];
-      end
-    end
-  end
-
   
   //----------------------------------------------------------------
   // Stage 0: AddRoundKey initial (combinational + register)
   //----------------------------------------------------------------
   always_comb begin
-    stage_next[0] = block_captured ^ round_keys_captured[0];
+    stage_next[0] = block ^ round_keys[0];
   end
   
   //----------------------------------------------------------------
@@ -96,7 +81,7 @@ module adam_aes_encipher_fully_pipelined (
         .IS_FINAL_ROUND(0)
       ) round_inst (
         .state_in(stage_reg[r-1]),
-        .round_key(round_keys_captured[r]),
+        .round_key(round_keys[r]),
         .state_out(round_outputs[r])
       );
       
@@ -113,7 +98,7 @@ module adam_aes_encipher_fully_pipelined (
     .IS_FINAL_ROUND(1)
   ) final_round_inst (
     .state_in(stage_reg[9]),
-    .round_key(round_keys_captured[10]),
+    .round_key(round_keys[10]),
     .state_out(round_outputs[10])
   );
   
@@ -136,8 +121,10 @@ module adam_aes_encipher_fully_pipelined (
       for (int s = 0; s <= 11; s++)
         stage_reg[s] <= 128'h0;
     end else begin
-      for (int s = 0; s <= 11; s++)
-        stage_reg[s] <= stage_next[s];
+      if (pipeline_active_reg) begin
+        for (int s = 0; s <= 11; s++)
+          stage_reg[s] <= stage_next[s];
+      end
     end
   end
   

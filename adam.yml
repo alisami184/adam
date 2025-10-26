@@ -364,6 +364,8 @@ fsets:
 
       - periph/aes/adam_aes_key_expansion_tb.sv
       - periph/aes/adam_aes_tb.sv
+      - periph/aes/test_keys.sv
+      - periph/aes/adam_aes_core_simple_tb.sv
       - periph/gpio/adam_periph_gpio_tb.sv
       - periph/spi/adam_periph_spi_phy_tb.sv
       - periph/spi/adam_periph_spi_tb.sv
@@ -425,18 +427,18 @@ fsets:
       - periph/uart/adam_periph_uart.sv
       - periph/adam_periph.sv
       - periph/adam_periph_hawkeye.sv
-      #- periph/aes_core/adam_aes_decipher_block.sv
-      #- periph/aes_core/adam_aes_encipher_block.sv
-      #- periph/aes_core/adam_aes_inv_sbox.sv
-      #- periph/aes_core/adam_aes_key_expansion.sv
-      #- periph/aes_core/adam_aes_sbox.sv
+      - periph/aes_core/adam_aes_decipher_block.sv
+      - periph/aes_core/adam_aes_encipher_block.sv
+      - periph/aes_core/adam_aes_inv_sbox.sv
+      - periph/aes_core/adam_aes_key_expansion.sv
+      - periph/aes_core/adam_aes_sbox.sv
       - periph/aes_core/adam_aes_top.sv
-      #- periph/aes_core/adam_aes_core.sv
-      - periph/aes_core/adam_aes_sbox_byte.sv
-      - periph/aes_core/adam_aes_round_module.sv
-      - periph/aes_core/adam_aes_encipher_fully_pipelined.sv
-      - periph/aes_core/adam_aes_key_expansion_pipelined.sv
-      - periph/aes_core/adam_aes_core_fully_pipelined.sv
+      - periph/aes_core/adam_aes_core.sv
+      #- periph/aes_core/adam_aes_sbox_byte.sv
+      #- periph/aes_core/adam_aes_round_module.sv
+      #- periph/aes_core/adam_aes_encipher_fully_pipelined.sv
+      #- periph/aes_core/adam_aes_key_expansion_pipelined.sv
+      #- periph/aes_core/adam_aes_core_fully_pipelined.sv
 
 
       - syscfg/adam_syscfg_tgt.sv
