@@ -1,11 +1,15 @@
 //======================================================================
-// adam_aes_encipher_fully_pipelined.sv
+// adam_aes_encipher_fully_pipelined.sv - OPTIMIZED VERSION
 // --------------------
 // AES Encipher avec architecture fully pipelined
 // - 10 rounds instanciés physiquement
 // - Registres de pipeline entre chaque round
-// - Latence: 11 cycles
+// - LATENCE OPTIMISÉE: 10 cycles (au lieu de 12)
 // - Throughput: 1 bloc par cycle (après remplissage)
+//
+// OPTIMISATIONS APPLIQUÉES:
+// 1. Suppression du stage 11 (registre de sortie redondant) → -1 cycle
+// 2. Fusion AddRoundKey initial avec Round 1 → -1 cycle
 //======================================================================
 
 module adam_aes_encipher_fully_pipelined (
@@ -27,18 +31,16 @@ module adam_aes_encipher_fully_pipelined (
   //----------------------------------------------------------------
   // Parameters
   //----------------------------------------------------------------
-  localparam LATENCY = 12;  // 11 cycles de latence totale
+  localparam LATENCY = 10;  // OPTIMISÉ: 10 cycles au lieu de 12
   
   //----------------------------------------------------------------
-  // Pipeline stages (12 stages: 0 à 11)
-  // Stage 0: AddRoundKey initial
-  // Stages 1-9: Rounds normaux
-  // Stage 10: Round final
-  // Stage 11: Output register
+  // Pipeline stages (10 stages: 0 à 9)
+  // Stage 0: AddRoundKey initial + Round 1 combinés
+  // Stages 1-8: Rounds 2-9
+  // Stage 9: Round final (10)
   //----------------------------------------------------------------
-  logic [127:0] stage_reg [0:11];
-  logic [127:0] stage_next [0:11];
-  logic [11:0]  stage_we;
+  logic [127:0] stage_reg [0:9];
+  logic [127:0] stage_next [0:9];
   
   //----------------------------------------------------------------
   // Control signals
@@ -65,52 +67,62 @@ module adam_aes_encipher_fully_pipelined (
   logic [127:0] round_outputs [1:10];
   
   //----------------------------------------------------------------
-  // Stage 0: AddRoundKey initial (combinational + register)
+  // Stage 0: OPTIMISÉ - AddRoundKey initial + Round 1 fusionnés
+  // Cela économise 1 cycle en combinant deux opérations séquentielles
   //----------------------------------------------------------------
+  logic [127:0] initial_addroundkey;
+  
   always_comb begin
-    stage_next[0] = block ^ round_keys[0];
+    // AddRoundKey initial (combinatoire)
+    initial_addroundkey = block ^ round_keys[0];
+  end
+  
+  // Round 1 appliqué directement après AddRoundKey initial
+  adam_aes_round_module #(
+    .IS_FINAL_ROUND(0)
+  ) round_1_inst (
+    .state_in(initial_addroundkey),  // Utilise directement le résultat de AddRoundKey
+    .round_key(round_keys[1]),
+    .state_out(round_outputs[1])
+  );
+  
+  always_comb begin
+    stage_next[0] = round_outputs[1];
   end
   
   //----------------------------------------------------------------
-  // Stages 1-9: Normal rounds (SubBytes + ShiftRows + MixColumns + AddRoundKey)
+  // Stages 1-8: Rounds 2-9 (SubBytes + ShiftRows + MixColumns + AddRoundKey)
   //----------------------------------------------------------------
   genvar r;
   generate
-    for (r = 1; r <= 9; r++) begin : gen_middle_rounds
+    for (r = 2; r <= 9; r++) begin : gen_middle_rounds
       adam_aes_round_module #(
         .IS_FINAL_ROUND(0)
       ) round_inst (
-        .state_in(stage_reg[r-1]),
+        .state_in(stage_reg[r-2]),
         .round_key(round_keys[r]),
         .state_out(round_outputs[r])
       );
       
       always_comb begin
-        stage_next[r] = round_outputs[r];
+        stage_next[r-1] = round_outputs[r];
       end
     end
   endgenerate
   
   //----------------------------------------------------------------
-  // Stage 10: Final round (SubBytes + ShiftRows + AddRoundKey, NO MixColumns)
+  // Stage 9: Final round (SubBytes + ShiftRows + AddRoundKey, NO MixColumns)
   //----------------------------------------------------------------
   adam_aes_round_module #(
     .IS_FINAL_ROUND(1)
   ) final_round_inst (
-    .state_in(stage_reg[9]),
+    .state_in(stage_reg[8]),
     .round_key(round_keys[10]),
     .state_out(round_outputs[10])
   );
   
   always_comb begin
-    stage_next[10] = round_outputs[10];
-  end
-  
-  //----------------------------------------------------------------
-  // Stage 11: Output register
-  //----------------------------------------------------------------
-  always_comb begin
-    stage_next[11] = stage_reg[10];
+    stage_next[9] = round_outputs[10];
   end
   
   //----------------------------------------------------------------
@@ -118,20 +130,20 @@ module adam_aes_encipher_fully_pipelined (
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      for (int s = 0; s <= 11; s++)
+      for (int s = 0; s <= 9; s++)
         stage_reg[s] <= 128'h0;
     end else begin
       if (pipeline_active_reg) begin
-        for (int s = 0; s <= 11; s++)
+        for (int s = 0; s <= 9; s++)
           stage_reg[s] <= stage_next[s];
       end
     end
   end
   
   //----------------------------------------------------------------
-  // Output assignment
+  // Output assignment - OPTIMISÉ: sortie directe du dernier stage
   //----------------------------------------------------------------
-  assign result = stage_reg[11];
+  assign result = stage_reg[9];  // Plus de stage 11 redondant
   assign ready  = ready_reg;
   assign valid  = valid_reg;
   

@@ -1,13 +1,13 @@
 //======================================================================
-// adam_aes_core_fully_pipelined.sv
+// adam_aes_core_fully_pipelined.sv - OPTIMIZED VERSION
 // --------------------
 // AES Core avec architecture fully pipelined
 // Interface 100% compatible avec l'ancien adam_aes_core.sv
 //
-// Architecture:
-// - Key expansion pipelinée (3-4 cycles)
-// - Encipher fully pipelined (11 cycles)
-// - Total: ~15 cycles par bloc
+// Architecture OPTIMISÉE:
+// - Key expansion pipelinée (13-14 cycles)
+// - Encipher fully pipelined (10 cycles) ← OPTIMISÉ de 12 à 10
+// - Total: ~24 cycles premier bloc, puis 10 cycles par bloc
 // - Throughput: 1 bloc/cycle après remplissage
 //======================================================================
 
@@ -47,7 +47,7 @@ module adam_aes_core_fully_pipelined (
   logic         key_valid_reg;    
   logic         key_changed;
  
-  // Détection combinatoire
+  // Détection combinatoire du changement de clé
   always_comb begin
     key_changed = 1'b0;
     if (!key_valid_reg)                 key_changed = 1'b1;
@@ -90,7 +90,7 @@ module adam_aes_core_fully_pipelined (
     .ready(key_ready)
   );
   
-  // Encipher (fully pipelined)
+  // Encipher (fully pipelined) - OPTIMISÉ: 10 cycles au lieu de 12
   adam_aes_encipher_fully_pipelined enc_block (
     .clk(clk),
     .reset_n(reset_n),
@@ -109,45 +109,40 @@ module adam_aes_core_fully_pipelined (
   //----------------------------------------------------------------
   // Output assignments
   //----------------------------------------------------------------
-  assign ready        = ready_reg;
   assign result       = enc_result;
+  assign ready        = ready_reg;
   assign result_valid = result_valid_reg;
   
   //----------------------------------------------------------------
-  // Register update
+  // Registers update
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      state_reg        <= CTRL_IDLE;
-      result_valid_reg <= 1'b0;
-      ready_reg        <= 1'b1;
-      prev_key_reg      <= '0;
+      state_reg         <= CTRL_IDLE;
+      result_valid_reg  <= 1'b0;
+      ready_reg         <= 1'b1;
+      prev_key_reg      <= 256'h0;
       prev_keylen_reg   <= 1'b0;
       key_valid_reg     <= 1'b0;
-
     end else begin
-      state_reg        <= state_next;
-      result_valid_reg <= result_valid_next;
-      ready_reg        <= ready_next;
-
-      if (state_reg == CTRL_IDLE && start && key_changed) begin
+      state_reg         <= state_next;
+      result_valid_reg  <= result_valid_next;
+      ready_reg         <= ready_next;
+      
+      // Mémoriser la clé actuelle quand l'expansion est prête
+      if (key_ready && (state_reg == CTRL_KEY_WAIT || state_reg == CTRL_KEY_INIT)) begin
         prev_key_reg    <= key;
         prev_keylen_reg <= keylen;
-        key_valid_reg   <= 1'b0;
+        key_valid_reg   <= 1'b1;
       end
-      // Quand la key expansion est prête (toutes round_keys prêtes)
-      if (state_reg == CTRL_KEY_WAIT && key_ready) begin
-        key_valid_reg <= 1'b1;
-      end
-
     end
   end
   
   //----------------------------------------------------------------
-  // Control FSM 
+  // FSM Next State Logic
   //----------------------------------------------------------------
   always_comb begin
-    // Default values
+    // Default assignments
     state_next        = state_reg;
     result_valid_next = result_valid_reg;
     ready_next        = ready_reg;
@@ -157,22 +152,21 @@ module adam_aes_core_fully_pipelined (
     case (state_reg)
       //------------------------------------------------------------
       CTRL_IDLE: begin
-        ready_next = 1'b1;
+        ready_next         = 1'b1;
+        result_valid_next  = 1'b0;
         
         if (start) begin
-          key_init          = 1'b1;
-          ready_next        = 1'b0;
-          result_valid_next = 1'b0;
-          state_next        = CTRL_KEY_INIT;
           ready_next         = 1'b0;
           result_valid_next  = 1'b0;
+          
+          // Si la clé a changé, on doit refaire l'expansion
           if (key_changed) begin
             key_init   = 1'b1;
             state_next = CTRL_KEY_INIT;
           end else begin
+            // Clé déjà prête, on peut directement chiffrer
             state_next = CTRL_CIPHER_START;
           end
-
         end
       end
       
