@@ -1,5 +1,5 @@
 //======================================================================
-// adam_aes_encipher_block.sv
+// adam_aes_encipher_block.sv 
 //======================================================================
 
 module adam_aes_encipher_block(
@@ -26,24 +26,29 @@ module adam_aes_encipher_block(
   localparam AES_128_BIT_KEY = 1'h0;
   localparam AES_256_BIT_KEY = 1'h1;
   localparam AES128_ROUNDS = 4'ha;
+  localparam AES256_ROUNDS = 4'he;
+
+  //----------------------------------------------------------------
+  // States
+  //----------------------------------------------------------------
+  typedef enum logic [1:0] {
+    IDLE       = 2'h0,
+    PROCESSING = 2'h1,
+    DONE       = 2'h2
+  } state_t;
+
+  state_t state_reg, state_new;
 
   //----------------------------------------------------------------
   // Pipeline registers (3 stages)
   //----------------------------------------------------------------
   logic [127:0] stage_sbox_reg;      // Après SubBytes
-  logic [127:0] stage_shift_reg;     // Après ShiftRows
+  logic [127:0] stage_shift_reg;     // Après ShiftRows  
   logic [127:0] stage_mix_reg;       // Après MixColumns
-  logic         stage_sbox_valid;
-  logic         stage_shift_valid;
-  logic         stage_mix_valid;
-
+  
   logic [3:0]   round_ctr_reg;
-  logic [3:0]   round_ctr_new;
-  logic         round_ctr_we;
+  logic [3:0]   num_rounds;
   logic         ready_reg;
-  logic         ready_new;
-  logic         ready_we;
-  logic         busy_reg;
 
   //----------------------------------------------------------------
   // Functions
@@ -126,24 +131,25 @@ module adam_aes_encipher_block(
   end
 
   //----------------------------------------------------------------
-  // Pipeline datapath
+  // Datapath combinatoire
   //----------------------------------------------------------------
   logic [127:0] init_block;
   logic [127:0] next_sbox, next_shift, next_mix;
+  logic [127:0] final_result;
 
   // AddRoundKey initial
   assign init_block = block ^ round_key;
 
-  // Stage 1: SubBytes
-  assign sbox_input = (round_ctr_reg == 4'h0) ? init_block : stage_mix_reg;
-  assign next_sbox = subbytes_result;
+  // Stage 1: SubBytes input
+  assign sbox_input = (state_reg == IDLE) ? init_block : 
+                      (round_ctr_reg == 1) ? init_block : stage_mix_reg;
 
   // Stage 2: ShiftRows
   assign next_shift = shiftrows(stage_sbox_reg);
 
-  // Stage 3: MixColumns + AddRoundKey
-  assign next_mix = (round_ctr_reg >= AES128_ROUNDS) ? 
-                    (stage_shift_reg ^ round_key) :  // Final round (no MixColumns)
+  // Stage 3: MixColumns + AddRoundKey (ou juste AddRoundKey pour round final)
+  assign next_mix = (round_ctr_reg >= num_rounds) ? 
+                    (stage_shift_reg ^ round_key) :
                     (mixcolumns(stage_shift_reg) ^ round_key);
 
   //----------------------------------------------------------------
@@ -151,56 +157,58 @@ module adam_aes_encipher_block(
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      stage_sbox_reg   <= 128'h0;
-      stage_shift_reg  <= 128'h0;
-      stage_mix_reg    <= 128'h0;
-      stage_sbox_valid <= 1'b0;
-      stage_shift_valid <= 1'b0;
-      stage_mix_valid  <= 1'b0;
-      round_ctr_reg    <= 4'h0;
-      ready_reg        <= 1'b1;
-      busy_reg         <= 1'b0;
+      state_reg       <= IDLE;
+      stage_sbox_reg  <= 128'h0;
+      stage_shift_reg <= 128'h0;
+      stage_mix_reg   <= 128'h0;
+      round_ctr_reg   <= 4'h0;
+      ready_reg       <= 1'b1;
     end else begin
-      // Pipeline flow
-      if (next && !busy_reg) begin
-        // Start new encryption
-        busy_reg         <= 1'b1;
-        ready_reg        <= 1'b0;
-        round_ctr_reg    <= 4'h1;
-        stage_sbox_reg   <= next_sbox;
-        stage_sbox_valid <= 1'b1;
-      end else if (busy_reg) begin
-        // Pipeline stages avancent
-        stage_sbox_reg   <= next_sbox;
-        stage_shift_reg  <= next_shift;
-        stage_mix_reg    <= next_mix;
-        
-        stage_shift_valid <= stage_sbox_valid;
-        stage_mix_valid   <= stage_shift_valid;
-
-        // Incrément round counter
-        if (stage_sbox_valid && round_ctr_reg <= AES128_ROUNDS) begin
-          round_ctr_reg <= round_ctr_reg + 1'b1;
+      case (state_reg)
+        IDLE: begin
+          if (next) begin
+            state_reg      <= PROCESSING;
+            round_ctr_reg  <= 4'h1;
+            ready_reg      <= 1'b0;
+            // Premier round : charge init_block dans pipeline
+            stage_sbox_reg <= subbytes_result;
+          end
         end
 
-        // Terminé quand round 10 sort du pipeline
-        if (round_ctr_reg > AES128_ROUNDS && stage_mix_valid) begin
-          ready_reg <= 1'b1;
-          busy_reg  <= 1'b0;
-          stage_sbox_valid  <= 1'b0;
-          stage_shift_valid <= 1'b0;
-          stage_mix_valid   <= 1'b0;
+        PROCESSING: begin
+          // Pipeline avance chaque cycle
+          stage_sbox_reg  <= subbytes_result;
+          stage_shift_reg <= next_shift;
+          stage_mix_reg   <= next_mix;
+          
+          // Incrément compteur
+          if (round_ctr_reg <= num_rounds) begin
+            round_ctr_reg <= round_ctr_reg + 1;
+          end
+
+          // Terminé après que le dernier round sorte du pipeline
+          if (round_ctr_reg > num_rounds + 2) begin
+            state_reg <= DONE;
+            ready_reg <= 1'b1;
+          end
         end
-      end
+
+        DONE: begin
+          state_reg <= IDLE;
+        end
+
+        default: state_reg <= IDLE;
+      endcase
     end
   end
 
   //----------------------------------------------------------------
   // Outputs
   //----------------------------------------------------------------
-  assign new_block = stage_mix_reg;
-  assign ready     = ready_reg;
-  assign round     = round_ctr_reg;
-  assign sboxw     = 32'h0;  // Unused avec S-boxes parallèles
+  assign num_rounds = (keylen == AES_256_BIT_KEY) ? AES256_ROUNDS : AES128_ROUNDS;
+  assign new_block  = stage_mix_reg;
+  assign ready      = ready_reg;
+  assign round      = round_ctr_reg;
+  assign sboxw      = 32'h0;  // Unused
 
 endmodule
