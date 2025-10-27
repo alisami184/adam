@@ -1,30 +1,31 @@
 //======================================================================
-// adam_aes_core_fully_pipelined.sv - CLEAN 9-CYCLE VERSION
+// adam_aes_core_fully_pipelined.sv
 // --------------------
-// AES Core fully pipelined avec latence optimisée
-// Interface 100% compatible avec adam_aes_core.sv
+// AES Core avec architecture fully pipelined
+// Interface 100% compatible avec l'ancien adam_aes_core.sv
 //
-// Performance:
-// - Premier bloc: ~23 cycles (14 key expansion + 9 cipher)
-// - Blocs suivants: 9 cycles (sans key expansion)
-// - Throughput: 1 bloc/cycle après remplissage pipeline
+// Architecture:
+// - Key expansion pipelinée (3-4 cycles)
+// - Encipher fully pipelined (11 cycles)
+// - Total: ~15 cycles par bloc
+// - Throughput: 1 bloc/cycle après remplissage
 //======================================================================
 
 module adam_aes_core_fully_pipelined (
     input  logic         clk,
     input  logic         reset_n,
     
-    // Control
+    // Control (INTERFACE IDENTIQUE À L'ANCIEN CORE)
     input  logic         encdec,        // 1 = encrypt, 0 = decrypt
     input  logic         start,
     output logic         ready,
     output logic         result_valid,
     
-    // Key
+    // Key (INTERFACE IDENTIQUE)
     input  logic [255:0] key,
     input  logic         keylen,        // 0 = 128-bit, 1 = 256-bit
     
-    // Data
+    // Data (INTERFACE IDENTIQUE)
     input  logic [127:0] block,
     output logic [127:0] result
 );
@@ -46,7 +47,7 @@ module adam_aes_core_fully_pipelined (
   logic         key_valid_reg;    
   logic         key_changed;
  
-  // Détection de changement de clé
+  // Détection combinatoire
   always_comb begin
     key_changed = 1'b0;
     if (!key_valid_reg)                 key_changed = 1'b1;
@@ -55,7 +56,7 @@ module adam_aes_core_fully_pipelined (
   end
 
   //----------------------------------------------------------------
-  // FSM States
+  // FSM States (IDENTIQUES À L'ANCIEN CORE)
   //----------------------------------------------------------------
   typedef enum logic [2:0] {
     CTRL_IDLE         = 3'h0,
@@ -78,7 +79,7 @@ module adam_aes_core_fully_pipelined (
   // Submodules
   //----------------------------------------------------------------
   
-  // Key Expansion (~14 cycles)
+  // Key Expansion (pipelined)
   adam_aes_key_expansion_pipelined key_exp (
     .clk(clk),
     .reset_n(reset_n),
@@ -89,7 +90,7 @@ module adam_aes_core_fully_pipelined (
     .ready(key_ready)
   );
   
-  // Encipher (9 cycles)
+  // Encipher (fully pipelined)
   adam_aes_encipher_fully_pipelined enc_block (
     .clk(clk),
     .reset_n(reset_n),
@@ -102,43 +103,51 @@ module adam_aes_core_fully_pipelined (
     .result(enc_result)
   );
   
+  // NOTE: Decipher pas encore implémenté (TODO pour phase 2)
+  // Pour l'instant, seul l'encryption est supporté
+  
   //----------------------------------------------------------------
   // Output assignments
   //----------------------------------------------------------------
-  assign result       = enc_result;
   assign ready        = ready_reg;
+  assign result       = enc_result;
   assign result_valid = result_valid_reg;
   
   //----------------------------------------------------------------
-  // Registers update
+  // Register update
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      state_reg         <= CTRL_IDLE;
-      result_valid_reg  <= 1'b0;
-      ready_reg         <= 1'b1;
-      prev_key_reg      <= 256'h0;
+      state_reg        <= CTRL_IDLE;
+      result_valid_reg <= 1'b0;
+      ready_reg        <= 1'b1;
+      prev_key_reg      <= '0;
       prev_keylen_reg   <= 1'b0;
       key_valid_reg     <= 1'b0;
+
     end else begin
-      state_reg         <= state_next;
-      result_valid_reg  <= result_valid_next;
-      ready_reg         <= ready_next;
-      
-      // Mémoriser la clé quand expansion terminée
-      if (key_ready && (state_reg == CTRL_KEY_WAIT || state_reg == CTRL_KEY_INIT)) begin
+      state_reg        <= state_next;
+      result_valid_reg <= result_valid_next;
+      ready_reg        <= ready_next;
+
+      if (state_reg == CTRL_IDLE && start && key_changed) begin
         prev_key_reg    <= key;
         prev_keylen_reg <= keylen;
-        key_valid_reg   <= 1'b1;
+        key_valid_reg   <= 1'b0;
       end
+      // Quand la key expansion est prête (toutes round_keys prêtes)
+      if (state_reg == CTRL_KEY_WAIT && key_ready) begin
+        key_valid_reg <= 1'b1;
+      end
+
     end
   end
   
   //----------------------------------------------------------------
-  // FSM Logic
+  // Control FSM 
   //----------------------------------------------------------------
   always_comb begin
-    // Defaults
+    // Default values
     state_next        = state_reg;
     result_valid_next = result_valid_reg;
     ready_next        = ready_reg;
@@ -146,51 +155,61 @@ module adam_aes_core_fully_pipelined (
     enc_start         = 1'b0;
     
     case (state_reg)
+      //------------------------------------------------------------
       CTRL_IDLE: begin
-        ready_next         = 1'b1;
-        result_valid_next  = 1'b0;
+        ready_next = 1'b1;
         
         if (start) begin
+          key_init          = 1'b1;
+          ready_next        = 1'b0;
+          result_valid_next = 1'b0;
+          state_next        = CTRL_KEY_INIT;
           ready_next         = 1'b0;
           result_valid_next  = 1'b0;
-          
           if (key_changed) begin
             key_init   = 1'b1;
             state_next = CTRL_KEY_INIT;
           end else begin
             state_next = CTRL_CIPHER_START;
           end
+
         end
       end
       
+      //------------------------------------------------------------
       CTRL_KEY_INIT: begin
         key_init   = 1'b1;
         state_next = CTRL_KEY_WAIT;
       end
       
+      //------------------------------------------------------------
       CTRL_KEY_WAIT: begin
         if (key_ready) begin
           state_next = CTRL_CIPHER_START;
         end
       end
       
+      //------------------------------------------------------------
       CTRL_CIPHER_START: begin
         enc_start  = 1'b1;
         state_next = CTRL_CIPHER_WAIT;
       end
       
+      //------------------------------------------------------------
       CTRL_CIPHER_WAIT: begin
         if (enc_valid) begin
           state_next = CTRL_DONE;
         end
       end
       
+      //------------------------------------------------------------
       CTRL_DONE: begin
         result_valid_next = 1'b1;
         ready_next        = 1'b1;
         state_next        = CTRL_IDLE;
       end
       
+      //------------------------------------------------------------
       default: begin
         state_next = CTRL_IDLE;
       end

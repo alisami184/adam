@@ -1,17 +1,15 @@
 //======================================================================
-// adam_aes_encipher_fully_pipelined.sv - CLEAN 9-CYCLE VERSION
+// adam_aes_encipher_fully_pipelined.sv - OPTIMIZED VERSION
 // --------------------
-// AES Encipher fully pipelined optimisé
-// - LATENCE: 9 CYCLES (meilleure latence possible sans impact timing)
-// - Throughput: 1 bloc/cycle après remplissage
-// - Fréquence: Identique à la version originale
+// AES Encipher avec architecture fully pipelined
+// - 10 rounds instanciés physiquement
+// - Registres de pipeline entre chaque round
+// - LATENCE OPTIMISÉE: 10 cycles (au lieu de 12)
+// - Throughput: 1 bloc par cycle (après remplissage)
 //
-// OPTIMISATIONS:
-// 1. Fusion AddRoundKey initial + Round 1 → -1 cycle
-// 2. Suppression output register → -1 cycle  
-// 3. FSM 2 états (pas de DONE) → -1 cycle
-// 4. Valid généré directement → -1 cycle
-// Total: 13 → 9 cycles
+// OPTIMISATIONS APPLIQUÉES:
+// 1. Suppression du stage 11 (registre de sortie redondant) → -1 cycle
+// 2. Fusion AddRoundKey initial avec Round 1 → -1 cycle
 //======================================================================
 
 module adam_aes_encipher_fully_pipelined (
@@ -33,53 +31,57 @@ module adam_aes_encipher_fully_pipelined (
   //----------------------------------------------------------------
   // Parameters
   //----------------------------------------------------------------
-  localparam LATENCY = 9;
+  localparam LATENCY = 10;  // OPTIMISÉ: 10 cycles au lieu de 12
   
   //----------------------------------------------------------------
-  // Pipeline stages (9 stages: 0-8)
-  // Stage 0: AddRoundKey initial + Round 1 fusionnés
-  // Stages 1-7: Rounds 2-9
-  // Stage 8: Round 10 (final, sans MixColumns)
+  // Pipeline stages (10 stages: 0 à 9)
+  // Stage 0: AddRoundKey initial + Round 1 combinés
+  // Stages 1-8: Rounds 2-9
+  // Stage 9: Round final (10)
   //----------------------------------------------------------------
-  logic [127:0] stage_reg [0:8];
-  logic [127:0] stage_next [0:8];
+  logic [127:0] stage_reg [0:9];
+  logic [127:0] stage_next [0:9];
   
   //----------------------------------------------------------------
-  // Control
+  // Control signals
   //----------------------------------------------------------------
-  logic [3:0] cycle_counter_reg, cycle_counter_next;
-  logic       pipeline_active_reg, pipeline_active_next;
-  logic       ready_reg, ready_next;
-  logic       valid_reg, valid_next;
+  logic [4:0]   cycle_counter_reg, cycle_counter_next;
+  logic         pipeline_active_reg, pipeline_active_next;
   
   //----------------------------------------------------------------
-  // FSM (2 états seulement)
+  // FSM
   //----------------------------------------------------------------
-  typedef enum logic {
-    IDLE       = 1'b0,
-    PROCESSING = 1'b1
+  typedef enum logic [1:0] {
+    IDLE       = 2'h0,
+    PROCESSING = 2'h1,
+    DONE       = 2'h2
   } state_t;
   
   state_t state_reg, state_next;
+  logic   ready_reg, ready_next;
+  logic   valid_reg, valid_next;
   
   //----------------------------------------------------------------
-  // Round outputs
+  // Round outputs (combinational)
   //----------------------------------------------------------------
   logic [127:0] round_outputs [1:10];
-  logic [127:0] initial_xor;
   
   //----------------------------------------------------------------
-  // Stage 0: AddRoundKey initial + Round 1 FUSIONNÉS
-  // Cette fusion économise 1 cycle car AddRoundKey est un simple XOR
+  // Stage 0: OPTIMISÉ - AddRoundKey initial + Round 1 fusionnés
+  // Cela économise 1 cycle en combinant deux opérations séquentielles
   //----------------------------------------------------------------
+  logic [127:0] initial_addroundkey;
+  
   always_comb begin
-    initial_xor = block ^ round_keys[0];
+    // AddRoundKey initial (combinatoire)
+    initial_addroundkey = block ^ round_keys[0];
   end
   
+  // Round 1 appliqué directement après AddRoundKey initial
   adam_aes_round_module #(
     .IS_FINAL_ROUND(0)
   ) round_1_inst (
-    .state_in(initial_xor),
+    .state_in(initial_addroundkey),  // Utilise directement le résultat de AddRoundKey
     .round_key(round_keys[1]),
     .state_out(round_outputs[1])
   );
@@ -89,7 +91,7 @@ module adam_aes_encipher_fully_pipelined (
   end
   
   //----------------------------------------------------------------
-  // Stages 1-7: Rounds 2-9
+  // Stages 1-8: Rounds 2-9 (SubBytes + ShiftRows + MixColumns + AddRoundKey)
   //----------------------------------------------------------------
   genvar r;
   generate
@@ -109,47 +111,49 @@ module adam_aes_encipher_fully_pipelined (
   endgenerate
   
   //----------------------------------------------------------------
-  // Stage 8: Round 10 final (pas de MixColumns)
+  // Stage 9: Final round (SubBytes + ShiftRows + AddRoundKey, NO MixColumns)
   //----------------------------------------------------------------
   adam_aes_round_module #(
     .IS_FINAL_ROUND(1)
   ) final_round_inst (
-    .state_in(stage_reg[7]),
+    .state_in(stage_reg[8]),
     .round_key(round_keys[10]),
     .state_out(round_outputs[10])
   );
   
   always_comb begin
-    stage_next[8] = round_outputs[10];
+    stage_next[9] = round_outputs[10];
   end
   
   //----------------------------------------------------------------
-  // Pipeline registers
+  // Pipeline register update
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
-      for (int s = 0; s <= 8; s++)
+      for (int s = 0; s <= 9; s++)
         stage_reg[s] <= 128'h0;
     end else begin
       if (pipeline_active_reg) begin
-        for (int s = 0; s <= 8; s++)
+        for (int s = 0; s <= 9; s++)
           stage_reg[s] <= stage_next[s];
       end
     end
   end
   
   //----------------------------------------------------------------
-  // Output - Direct du dernier stage (pas de registre supplémentaire)
+  // Output assignment - OPTIMISÉ: sortie directe du dernier stage
   //----------------------------------------------------------------
-  assign result = stage_reg[8];
+  assign result = stage_reg[9];  // Plus de stage 11 redondant
+  assign ready  = ready_reg;
+  assign valid  = valid_reg;
   
   //----------------------------------------------------------------
-  // Control registers
+  // Control FSM registers
   //----------------------------------------------------------------
   always_ff @(posedge clk or negedge reset_n) begin
     if (!reset_n) begin
       state_reg           <= IDLE;
-      cycle_counter_reg   <= 4'h0;
+      cycle_counter_reg   <= 5'h0;
       pipeline_active_reg <= 1'b0;
       ready_reg           <= 1'b1;
       valid_reg           <= 1'b0;
@@ -163,50 +167,55 @@ module adam_aes_encipher_fully_pipelined (
   end
   
   //----------------------------------------------------------------
-  // FSM Logic - OPTIMISÉE
+  // Control FSM logic
   //----------------------------------------------------------------
   always_comb begin
+    // Default assignments
     state_next           = state_reg;
     cycle_counter_next   = cycle_counter_reg;
     pipeline_active_next = pipeline_active_reg;
     ready_next           = ready_reg;
-    valid_next           = 1'b0;  // Valid pulsé, pas maintenu
+    valid_next           = valid_reg;
     
     case (state_reg)
+      //------------------------------------------------------------
       IDLE: begin
         ready_next = 1'b1;
+        valid_next = 1'b0;
         
         if (start) begin
           state_next           = PROCESSING;
-          cycle_counter_next   = 4'h0;
+          cycle_counter_next   = 5'h0;
           pipeline_active_next = 1'b1;
           ready_next           = 1'b0;
         end
       end
       
+      //------------------------------------------------------------
       PROCESSING: begin
-        cycle_counter_next = cycle_counter_reg + 1;
-        
-        // Valid dès que latence atteinte
-        if (cycle_counter_reg == (LATENCY - 1)) begin
-          valid_next           = 1'b1;
-          pipeline_active_next = 1'b0;
-          state_next           = IDLE;  // Retour direct (pas d'état DONE)
-          ready_next           = 1'b1;
+        if (pipeline_active_reg) begin
+          cycle_counter_next = cycle_counter_reg + 1;
+          
+          // After LATENCY cycles, result is valid
+          if (cycle_counter_reg == (LATENCY - 1)) begin
+            state_next = DONE;
+            valid_next = 1'b1;
+          end
         end
       end
       
+      //------------------------------------------------------------
+      DONE: begin
+        pipeline_active_next = 1'b0;
+        state_next           = IDLE;
+      end
+      
+      //------------------------------------------------------------
       default: begin
         state_next = IDLE;
       end
     endcase
   end
-  
-  //----------------------------------------------------------------
-  // Outputs
-  //----------------------------------------------------------------
-  assign ready = ready_reg;
-  assign valid = valid_reg;
 
 endmodule
 

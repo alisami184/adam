@@ -116,9 +116,9 @@ module adam_aes_top(
   assign irq = periph_enable && done_event && done_event_ie;
 
   //----------------------------------------------------------------
-  // Core instantiation
+  // Core instantiation 
   //----------------------------------------------------------------
-  adam_aes_core_fully_pipelined core(
+  adam_aes_core core(          // instantiate adam_aes_core_fully_pipelined for the pipelined version
     .clk(clk),
     .reset_n(reset_n),
     .encdec(core_encdec),

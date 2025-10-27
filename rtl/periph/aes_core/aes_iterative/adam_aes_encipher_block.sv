@@ -1,5 +1,5 @@
 //======================================================================
-// adam_aes_encipher_block.sv - CORRIGÉ - S-Box Parallèle
+// adam_aes_encipher_block.sv - Version S-Box Séquentielle
 //======================================================================
 
 module adam_aes_encipher_block(
@@ -35,10 +35,10 @@ module adam_aes_encipher_block(
   localparam MAIN_UPDATE  = 3'h3;
   localparam FINAL_UPDATE = 3'h4;
 
-  localparam CTRL_IDLE  = 2'h0;
-  localparam CTRL_INIT  = 2'h1;
-  localparam CTRL_SBOX  = 2'h2; 
-  localparam CTRL_MAIN  = 2'h3;
+  localparam CTRL_IDLE  = 3'h0;
+  localparam CTRL_INIT  = 3'h1;
+  localparam CTRL_SBOX  = 3'h2; 
+  localparam CTRL_MAIN  = 3'h3;
 
   //----------------------------------------------------------------
   // Round functions with sub functions.
@@ -116,27 +116,9 @@ module adam_aes_encipher_block(
   endfunction
 
   //----------------------------------------------------------------
-  //  Fonction SubBytes parallèle avec 16 S-boxes
-  //----------------------------------------------------------------
-  logic [7:0] sbox_parallel_in [0:15];
-  logic [7:0] sbox_parallel_out [0:15];
-  logic [127:0] subbytes_result;
-
-  // Instancier 16 S-boxes en parallèle
-  genvar sb_idx;
-  generate
-    for (sb_idx = 0; sb_idx < 16; sb_idx++) begin : gen_parallel_sboxes
-      adam_aes_sbox_byte sbox_inst (
-        .sbox_byte_in(sbox_parallel_in[sb_idx]),
-        .sbox_byte_out(sbox_parallel_out[sb_idx])
-      );
-    end
-  endgenerate
-
-  //----------------------------------------------------------------
   // Registers including update variables and write enable.
   //----------------------------------------------------------------
-  logic [1 : 0]   sword_ctr_reg;  
+  logic [1 : 0]   sword_ctr_reg;  // Compteur pour traiter les 4 mots (16 octets)
   logic [1 : 0]   sword_ctr_new;
   logic           sword_ctr_we;
   logic           sword_ctr_inc;
@@ -162,8 +144,8 @@ module adam_aes_encipher_block(
   logic           ready_new;
   logic           ready_we;
 
-  logic [1 : 0]   enc_ctrl_reg;
-  logic [1 : 0]   enc_ctrl_new;
+  logic [2 : 0]   enc_ctrl_reg;
+  logic [2 : 0]   enc_ctrl_new;
   logic           enc_ctrl_we;
 
   //----------------------------------------------------------------
@@ -225,27 +207,7 @@ module adam_aes_encipher_block(
     end
 
   //----------------------------------------------------------------
-  // ✅ CORRECTION: Connexion des S-boxes parallèles
-  //----------------------------------------------------------------
-  logic [127:0] old_block_for_sbox;
-  assign old_block_for_sbox = {block_w0_reg, block_w1_reg, block_w2_reg, block_w3_reg};
-
-  // Connecter les 16 bytes aux S-boxes
-  always_comb begin
-    for (int i = 0; i < 16; i++) begin
-      sbox_parallel_in[i] = old_block_for_sbox[(i*8) +: 8];
-    end
-  end
-
-  // Récupérer les résultats
-  always_comb begin
-    for (int i = 0; i < 16; i++) begin
-      subbytes_result[(i*8) +: 8] = sbox_parallel_out[i];
-    end
-  end
-
-  //----------------------------------------------------------------
-  // round_logic - ✅ CORRIGÉ
+  // round_logic - UNE SEULE S-BOX, TRAITEMENT SÉQUENTIEL
   //----------------------------------------------------------------
   always_comb
     begin : round_logic
@@ -261,15 +223,20 @@ module adam_aes_encipher_block(
 
       old_block = {block_w0_reg, block_w1_reg, block_w2_reg, block_w3_reg};
       
-      // ✅ CORRECTION CRITIQUE: 
-      // ShiftRows et MixColumns s'appliquent sur old_block
-      // SubBytes est géré UNIQUEMENT dans SBOX_UPDATE via subbytes_result
       shiftrows_block    = shiftrows(old_block);
       mixcolumns_block   = mixcolumns(shiftrows_block);
       
       addkey_init_block  = addroundkey(block, round_key);
       addkey_main_block  = addroundkey(mixcolumns_block, round_key);
       addkey_final_block = addroundkey(shiftrows_block, round_key);
+
+      // Sélection du mot à envoyer à la S-Box (une seule S-Box)
+      case (sword_ctr_reg)
+        2'h0: muxed_sboxw = old_block[127 : 096];
+        2'h1: muxed_sboxw = old_block[095 : 064];
+        2'h2: muxed_sboxw = old_block[063 : 032];
+        2'h3: muxed_sboxw = old_block[031 : 000];
+      endcase
 
       case (update_type)
         INIT_UPDATE:
@@ -281,15 +248,36 @@ module adam_aes_encipher_block(
             block_w3_we  = 1'b1;
           end
 
-        // ✅ CORRECTION: SBOX_UPDATE utilise subbytes_result
+        // SBOX_UPDATE: mise à jour mot par mot (séquentiel)
         SBOX_UPDATE:
           begin
-            // Les 16 S-boxes ont transformé old_block → subbytes_result
-            block_new    = subbytes_result;
-            block_w0_we  = 1'b1;
-            block_w1_we  = 1'b1;
-            block_w2_we  = 1'b1;
-            block_w3_we  = 1'b1;
+            block_new = old_block;
+            
+            case (sword_ctr_reg)
+              2'h0:
+                begin
+                  block_new[127 : 096] = new_sboxw;
+                  block_w0_we = 1'b1;
+                end
+              
+              2'h1:
+                begin
+                  block_new[095 : 064] = new_sboxw;
+                  block_w1_we = 1'b1;
+                end
+
+              2'h2:
+                begin
+                  block_new[063 : 032] = new_sboxw;
+                  block_w2_we = 1'b1;
+                end
+
+              2'h3:
+                begin
+                  block_new[031 : 000] = new_sboxw;
+                  block_w3_we = 1'b1;
+                end
+            endcase
           end
 
         MAIN_UPDATE:
@@ -317,7 +305,7 @@ module adam_aes_encipher_block(
     end
 
   //----------------------------------------------------------------
-  // sword_ctr 
+  // sword_ctr - Compteur pour traiter les 4 mots séquentiellement
   //----------------------------------------------------------------
   always_comb
     begin : sword_ctr
@@ -331,7 +319,7 @@ module adam_aes_encipher_block(
         end
       else if (sword_ctr_inc)
         begin
-          sword_ctr_new = sword_ctr_reg + 1'b1;
+          sword_ctr_new = sword_ctr_reg + 2'h1;
           sword_ctr_we  = 1'b1;
         end
     end
@@ -357,7 +345,7 @@ module adam_aes_encipher_block(
     end
 
   //----------------------------------------------------------------
-  // encipher_ctrl 
+  // encipher_ctrl - MACHINE À ÉTATS AVEC TRAITEMENT SÉQUENTIEL
   //----------------------------------------------------------------
   always_comb
     begin: encipher_ctrl
@@ -385,6 +373,7 @@ module adam_aes_encipher_block(
             if (next)
               begin
                 round_ctr_rst = 1'b1;
+                sword_ctr_rst = 1'b1;
                 ready_new     = 1'b0;
                 ready_we      = 1'b1;
                 enc_ctrl_new  = CTRL_INIT;
@@ -395,6 +384,7 @@ module adam_aes_encipher_block(
         CTRL_INIT:
           begin
             round_ctr_inc = 1'b1;
+            sword_ctr_rst = 1'b1;
             update_type   = INIT_UPDATE;
             enc_ctrl_new  = CTRL_SBOX;
             enc_ctrl_we   = 1'b1;
@@ -402,9 +392,16 @@ module adam_aes_encipher_block(
 
         CTRL_SBOX:
           begin
+            sword_ctr_inc = 1'b1;
             update_type   = SBOX_UPDATE;
-            enc_ctrl_new  = CTRL_MAIN;
-            enc_ctrl_we   = 1'b1;
+            
+            // Après avoir traité les 4 mots (16 octets), passer à MAIN
+            if (sword_ctr_reg == 2'h3)
+              begin
+                enc_ctrl_new  = CTRL_MAIN;
+                enc_ctrl_we   = 1'b1;
+                sword_ctr_rst = 1'b1;
+              end
           end
 
         CTRL_MAIN:
