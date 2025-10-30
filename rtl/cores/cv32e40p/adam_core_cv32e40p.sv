@@ -16,6 +16,19 @@ module adam_core_cv32e40p #(
     
     input  logic debug_req,
     output logic debug_unavail
+`ifdef DIFT
+    // ============ DIFT (PARALLÈLE) ============
+    ,
+    // Vers Data Memory - Tags en écriture
+    output logic       data_we_tag_o,
+    output logic       data_wdata_tag_o,
+    output logic [3:0] data_be_tag_o,
+    
+    // Depuis Data Memory - Tags en lecture
+    input  logic [3:0] data_rdata_tag_i,
+    input  logic       data_gnt_tag_i,
+    input  logic       data_rvalid_tag_i
+`endif
 );
 
     ADAM_PAUSE pause_inst ();
@@ -103,6 +116,17 @@ module adam_core_cv32e40p #(
         .debug_havereset_o (),
         .debug_running_o   (),
         .debug_halted_o    ()
+
+`ifdef DIFT
+        // ============  DIFT ============
+        ,
+        .data_we_tag_o     (data_we_tag_o),
+        .data_wdata_tag_o  (data_wdata_tag_o),
+        .data_rdata_tag_i  (data_rdata_tag_i),
+        .data_gnt_tag_i    (data_gnt_tag_i),
+        .data_rvalid_tag_i (data_rvalid_tag_i),
+        .data_be_tag_o     (data_be_tag_o)
+`endif
     );
 
     adam_obi_to_axil #(

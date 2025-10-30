@@ -305,6 +305,16 @@ module adam #(
 
     // hsdom - cpu ============================================================
 
+
+`ifdef DIFT
+    logic       hsdom_cpu_data_we_tag    [NO_CPUS+1];
+    logic       hsdom_cpu_data_wdata_tag [NO_CPUS+1];
+    logic [3:0] hsdom_cpu_data_rdata_tag [NO_CPUS+1];
+    logic       hsdom_cpu_data_gnt_tag   [NO_CPUS+1];
+    logic       hsdom_cpu_data_rvalid_tag[NO_CPUS+1];
+    logic [3:0] hsdom_cpu_data_be_tag    [NO_CPUS+1];
+`endif
+
     for (genvar i = 0; i < NO_CPUS; i++) begin
         assign hsdom_cpu_seq[i].clk = hsdom_seq.clk;
         assign hsdom_cpu_seq[i].rst = hsdom_seq.rst || hsdom_cpu_rst[i];
@@ -325,6 +335,15 @@ module adam #(
 
             .debug_req     (hsdom_debug_req[i+1]),
             .debug_unavail (hsdom_debug_unavail[i+1])
+`ifdef DIFT
+            ,
+            .data_we_tag_o     (hsdom_cpu_data_we_tag[i]),
+            .data_wdata_tag_o  (hsdom_cpu_data_wdata_tag[i]),
+            .data_be_tag_o     (hsdom_cpu_data_be_tag[i]),
+            .data_rdata_tag_i  (hsdom_cpu_data_rdata_tag[i]),
+            .data_gnt_tag_i    (hsdom_cpu_data_gnt_tag[i]),
+            .data_rvalid_tag_i (hsdom_cpu_data_rvalid_tag[i])
+`endif
         );
     end
 
@@ -348,6 +367,13 @@ module adam #(
     STRB_T hsdom_mem_be    [NO_MEMS+1];
     DATA_T hsdom_mem_wdata [NO_MEMS+1];
     DATA_T hsdom_mem_rdata [NO_MEMS+1];
+
+`ifdef DIFT
+    // signaux pour tags (seulement pour data memory)
+    logic       hsdom_mem_we_tag    [NO_MEMS+1];
+    logic [3:0] hsdom_mem_wdata_tag [NO_MEMS+1];
+    logic [3:0] hsdom_mem_rdata_tag [NO_MEMS+1];
+`endif
 
     for (genvar i = 0; i < NO_MEMS; i++) begin
         assign hsdom_mem_seq[i].clk = lsdom_seq.clk;
@@ -394,6 +420,12 @@ module adam #(
                     "/adam/mem0.hex" :
                     "/adam/mem1.hex"
                 )
+                `ifdef DIFT
+                ,
+                .TAG_HEXFILE (
+                    "/adam/mem1_tag.hex"
+                )
+                `endif
 `endif
             ) i_adam_mem (
                 .seq (hsdom_mem_seq[i]),
@@ -404,6 +436,13 @@ module adam #(
                 .be    (hsdom_mem_be   [i]),
                 .wdata (hsdom_mem_wdata[i]),
                 .rdata (hsdom_mem_rdata[i])
+            `ifdef DIFT
+                ,
+                .we_tag    (hsdom_mem_we_tag   [i]),
+                .be_tag    (hsdom_cpu_data_be_tag[i]),
+                .wdata_tag (hsdom_mem_wdata_tag[i]),
+                .rdata_tag (hsdom_mem_rdata_tag[i])
+            `endif
             );
         end
     end
@@ -624,5 +663,17 @@ module adam #(
 
     `ADAM_PAUSE_SLV_TIE_ON(lsdom_pause);
     `ADAM_PAUSE_SLV_TIE_ON(hsdom_pause);
+
+    // ============ CONNEXION DIRECTE CPU → MEMORY (BYPASS FABRIC) ============
+`ifdef DIFT
+    for (genvar i = 0; i < NO_CPUS; i++) begin
+        // CPU i connecté à MEM 1 (Data Memory)
+        assign hsdom_mem_we_tag[1]          = hsdom_cpu_data_we_tag[i];
+        assign hsdom_mem_wdata_tag[1]       = {3'b0, hsdom_cpu_data_wdata_tag[i]};  // 1 bit → 4 bits
+        assign hsdom_cpu_data_rdata_tag[i]  = hsdom_mem_rdata_tag[1];
+        assign hsdom_cpu_data_gnt_tag[i]    = hsdom_mem_req[1];  // Simple handshake
+        assign hsdom_cpu_data_rvalid_tag[i] = 1'b1;  // Toujours valide pour RAM synchrone
+    end
+`endif
 
 endmodule
