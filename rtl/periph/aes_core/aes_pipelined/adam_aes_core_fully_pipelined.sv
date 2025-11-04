@@ -7,8 +7,6 @@
 // Architecture:
 // - Key expansion pipelinée (3-4 cycles)
 // - Encipher fully pipelined (11 cycles)
-// - Total: ~15 cycles par bloc
-// - Throughput: 1 bloc/cycle après remplissage
 //======================================================================
 
 module adam_aes_core_fully_pipelined (
