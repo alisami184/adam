@@ -341,20 +341,21 @@ module adam #(
 
             .debug_req     (hsdom_debug_req[i+1]),
             .debug_unavail (hsdom_debug_unavail[i+1])
+
 `ifdef DIFT
             ,
-            // Connexions directes RAM (seulement CPU 0 pour le moment)
-            .ram_req_o       ((i == 0) ? hsdom_cpu0_ram_req       : /* à implémenter pour autres CPUs */),
-            .ram_addr_o      ((i == 0) ? hsdom_cpu0_ram_addr      : /* à implémenter */),
-            .ram_we_o        ((i == 0) ? hsdom_cpu0_ram_we        : /* à implémenter */),
-            .ram_be_o        ((i == 0) ? hsdom_cpu0_ram_be        : /* à implémenter */),
-            .ram_wdata_o     ((i == 0) ? hsdom_cpu0_ram_wdata     : /* à implémenter */),
-            .ram_rvalid_i    ((i == 0) ? hsdom_cpu0_ram_rvalid    : 1'b0),
-            .ram_rdata_i     ((i == 0) ? hsdom_cpu0_ram_rdata     : '0),
+            // Connexions directes RAM ↔ CPU
+            .ram_req_o       (hsdom_cpu0_ram_req    ),
+            .ram_addr_o      (hsdom_cpu0_ram_addr   ),
+            .ram_we_o        (hsdom_cpu0_ram_we     ),
+            .ram_be_o        (hsdom_cpu0_ram_be     ),
+            .ram_wdata_o     (hsdom_cpu0_ram_wdata  ),
+            .ram_rvalid_i    (hsdom_cpu0_ram_rvalid ),
+            .ram_rdata_i     (hsdom_cpu0_ram_rdata  ),
 
-            .ram_we_tag_o    ((i == 0) ? hsdom_cpu0_ram_we_tag    : /* à implémenter */),
-            .ram_wdata_tag_o ((i == 0) ? hsdom_cpu0_ram_wdata_tag : /* à implémenter */),
-            .ram_rdata_tag_i ((i == 0) ? hsdom_cpu0_ram_rdata_tag : '0)
+            .ram_we_tag_o    (hsdom_cpu0_ram_we_tag ),
+            .ram_wdata_tag_o (hsdom_cpu0_ram_wdata_tag),
+            .ram_rdata_tag_i (hsdom_cpu0_ram_rdata_tag)
 `endif
         );
     end
@@ -384,6 +385,8 @@ module adam #(
     logic       hsdom_mem1_we_tag;
     logic       hsdom_mem1_wdata_tag;
     logic [3:0] hsdom_mem1_rdata_tag;
+    // Signal pour rdata_tag des mémoires qui ne l'utilisent pas (MEM[0])
+    logic [3:0] unused_mem_rdata_tag [NO_MEMS+1];
 `endif
 
     for (genvar i = 0; i < NO_MEMS; i++) begin
@@ -423,52 +426,62 @@ module adam #(
         else begin
             adam_mem #(
                 `ADAM_CFG_PARAMS_MAP,
-
                 .SIZE (MEM_SIZE[i])
 
 `ifndef SYNTHESIS
-                , .HEXFILE ((i == 0) ?
-                    "/adam/mem0.hex" :
-                    "/adam/mem1.hex"
-                )
+                , .HEXFILE ((i == 0) ? "/adam/mem0.hex" : "/adam/mem1.hex")
 `ifdef DIFT
-            , .TAG_HEXFILE ((i == 1) ? "/adam/mem1_tag.hex" : "")
+                // Tag hexfile seulement pour MEM[1] (RAM)
+                , .TAG_HEXFILE ((i == 1) ? "/adam/mem1_tag.hex" : "")
 `endif
 `endif
             ) i_adam_mem (
                 .seq (hsdom_mem_seq[i]),
 
+`ifdef DIFT
+                // ============ MEM[1] (RAM) : ACCÈS DIRECT CPU ============
+                .req   ((i == 1) ? hsdom_cpu0_ram_req    : hsdom_mem_req[i]),
+                .addr  ((i == 1) ? hsdom_cpu0_ram_addr   : hsdom_mem_addr[i]),
+                .we    ((i == 1) ? hsdom_cpu0_ram_we     : hsdom_mem_we[i]),
+                .be    ((i == 1) ? hsdom_cpu0_ram_be     : hsdom_mem_be[i]),
+                .wdata ((i == 1) ? hsdom_cpu0_ram_wdata  : hsdom_mem_wdata[i]),
+                .rdata (hsdom_mem_rdata[i]),
+                
+                // Tags (seulement pour MEM[1])
+                .we_tag    ((i == 1) ? hsdom_cpu0_ram_we_tag    : 1'b0),
+                .wdata_tag ((i == 1) ? hsdom_cpu0_ram_wdata_tag : 1'b0),
+                .rdata_tag ((i == 1) ? hsdom_cpu0_ram_rdata_tag : unused_mem_rdata_tag[i])
+`else
+                // ============ PAS DE DIFT : tout via AXI ============
                 .req   (hsdom_mem_req  [i]),
                 .addr  (hsdom_mem_addr [i]),
                 .we    (hsdom_mem_we   [i]),
                 .be    (hsdom_mem_be   [i]),
                 .wdata (hsdom_mem_wdata[i]),
                 .rdata (hsdom_mem_rdata[i])
+`endif
             );
+        end
+    end
 `ifdef DIFT
-        // Mémoire de tags pour MEM[1] (RAM)
-        if (i == 1) begin : gen_tag_mem
-            adam_mem_tag #(
-                `ADAM_CFG_PARAMS_MAP,
-                .SIZE (MEM_SIZE[1]),  // Même taille que MEM[1]
-                .TAG_WIDTH (4)
-`ifndef SYNTHESIS
-                , .TAG_HEXFILE ("/adam/mem1_tag.hex")
-`endif
-            ) i_adam_mem_tag (
-                .seq       (hsdom_mem_seq[1]),
-                .req       (hsdom_mem_req[1]),
-                .addr      (hsdom_mem_addr[1]),       // Même adresse que RAM
-                .we_tag    (hsdom_mem1_we_tag),
-                .be_tag    (hsdom_mem_be[1]),         // Même byte enable que RAM
-                .wdata_tag (hsdom_mem1_wdata_tag),
-                .rdata_tag (hsdom_mem1_rdata_tag)
-            );
+    // ============ GÉNÉRATION DE RVALID POUR MEM[1] → CPU ============
+    //
+    // La RAM est synchrone : rvalid arrive 1 cycle après req
+    //
+    always_ff @(posedge lsdom_seq.clk) begin
+        if (lsdom_seq.rst) begin
+            hsdom_cpu0_ram_rvalid <= 1'b0;
+        end else begin
+            hsdom_cpu0_ram_rvalid <= hsdom_cpu0_ram_req;
         end
+    end
+    
+    // ============ ROUTAGE RDATA VERS CPU ============
+    //
+    // MEM[1] rdata connecté directement
+    //
+    assign hsdom_cpu0_ram_rdata = hsdom_mem_rdata[1];
 `endif
-        end
-end
-
     // hsdom - hsp ===========================================================
 
     ADAM_SEQ hsdom_hsp_seq ();
@@ -685,26 +698,5 @@ end
 
     `ADAM_PAUSE_SLV_TIE_ON(lsdom_pause);
     `ADAM_PAUSE_SLV_TIE_ON(hsdom_pause);
-
-    // ============ CONNEXION DIRECTE CPU[0] → TAG_MEM[1] ============
-`ifdef DIFT
-    // Connexion cpu à la tag memory de MEM[1]
-    assign hsdom_mem1_we_tag           = hsdom_cpu_data_we_tag[0];
-    assign hsdom_mem1_wdata_tag        = hsdom_cpu_data_wdata_tag[0];
-    assign hsdom_cpu_data_rdata_tag[0] = hsdom_mem1_rdata_tag;
-    
-    // Grant et rvalid : même timing que la RAM normale
-    assign hsdom_cpu_data_gnt_tag[0]    = 1'b1;  // Toujours prêt
-    assign hsdom_cpu_data_rvalid_tag[0] = 1'b1;  // RAM synchrone
-    
-    // Tie-off des autres CPUs si NO_CPUS > 1
-    generate
-        for (genvar j = 1; j < NO_CPUS; j++) begin : gen_unused_cpu_tags
-            assign hsdom_cpu_data_rdata_tag[j]  = 4'b0;
-            assign hsdom_cpu_data_gnt_tag[j]    = 1'b1;
-            assign hsdom_cpu_data_rvalid_tag[j] = 1'b1;
-        end
-    endgenerate
-`endif
 
 endmodule

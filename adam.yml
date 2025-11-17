@@ -451,7 +451,6 @@ fsets:
       - fabric/adam_fabric.sv
 
       - adam_mem.sv
-      - adam_tag_mem.sv
       - adam.sv
       - adam_clk_div.sv
       - adam_top.sv
