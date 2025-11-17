@@ -2,10 +2,8 @@
 // adam_aes_core_fully_pipelined.sv
 // --------------------
 // AES Core avec architecture fully pipelined
-// Interface 100% compatible avec l'ancien adam_aes_core.sv
-//
 // Architecture:
-// - Key expansion pipelinée (3-4 cycles)
+// - Key expansion pipelinée (11 cycles)
 // - Encipher fully pipelined (11 cycles)
 //======================================================================
 
@@ -13,17 +11,17 @@ module adam_aes_core_fully_pipelined (
     input  logic         clk,
     input  logic         reset_n,
     
-    // Control (INTERFACE IDENTIQUE À L'ANCIEN CORE)
+    // Control 
     input  logic         encdec,        // 1 = encrypt, 0 = decrypt
     input  logic         start,
     output logic         ready,
     output logic         result_valid,
     
-    // Key (INTERFACE IDENTIQUE)
+    // Key
     input  logic [255:0] key,
     input  logic         keylen,        // 0 = 128-bit, 1 = 256-bit
     
-    // Data (INTERFACE IDENTIQUE)
+    // Data
     input  logic [127:0] block,
     output logic [127:0] result
 );
@@ -54,7 +52,7 @@ module adam_aes_core_fully_pipelined (
   end
 
   //----------------------------------------------------------------
-  // FSM States (IDENTIQUES À L'ANCIEN CORE)
+  // FSM States
   //----------------------------------------------------------------
   typedef enum logic [2:0] {
     CTRL_IDLE         = 3'h0,

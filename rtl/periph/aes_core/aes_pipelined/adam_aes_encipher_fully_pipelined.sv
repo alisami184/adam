@@ -4,12 +4,7 @@
 // AES Encipher avec architecture fully pipelined
 // - 10 rounds instanciés physiquement
 // - Registres de pipeline entre chaque round
-// - LATENCE OPTIMISÉE: 10 cycles (au lieu de 12)
-// - Throughput: 1 bloc par cycle (après remplissage)
-//
-// OPTIMISATIONS APPLIQUÉES:
-// 1. Suppression du stage 11 (registre de sortie redondant) → -1 cycle
-// 2. Fusion AddRoundKey initial avec Round 1 → -1 cycle
+// - Throughput: 1 bloc par cycle (après latence initiale)
 //======================================================================
 
 module adam_aes_encipher_fully_pipelined (
@@ -31,7 +26,7 @@ module adam_aes_encipher_fully_pipelined (
   //----------------------------------------------------------------
   // Parameters
   //----------------------------------------------------------------
-  localparam LATENCY = 10;  // OPTIMISÉ: 10 cycles au lieu de 12
+  localparam LATENCY = 10;  
   
   //----------------------------------------------------------------
   // Pipeline stages (10 stages: 0 à 9)

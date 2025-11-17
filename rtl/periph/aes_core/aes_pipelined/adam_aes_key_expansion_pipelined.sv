@@ -5,9 +5,8 @@
 // Génère les 11 round keys (round 0 à 10) pour AES-128
 //
 // Architecture :
-// - FSM simple : IDLE -> INIT -> COMPUTE (x10) -> READY
+// - FSM  : IDLE -> INIT -> COMPUTE (x10) -> READY
 // - Latency : ~13-14 cycles
-// - Utilise des S-box combinatoires
 //======================================================================
 
 module adam_aes_key_expansion_pipelined (

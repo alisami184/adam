@@ -339,7 +339,6 @@ module adam #(
             ,
             .data_we_tag_o     (hsdom_cpu_data_we_tag[i]),
             .data_wdata_tag_o  (hsdom_cpu_data_wdata_tag[i]),
-            .data_be_tag_o     (hsdom_cpu_data_be_tag[i]),
             .data_rdata_tag_i  (hsdom_cpu_data_rdata_tag[i]),
             .data_gnt_tag_i    (hsdom_cpu_data_gnt_tag[i]),
             .data_rvalid_tag_i (hsdom_cpu_data_rvalid_tag[i])
@@ -369,10 +368,9 @@ module adam #(
     DATA_T hsdom_mem_rdata [NO_MEMS+1];
 
 `ifdef DIFT
-    // signaux pour tags (seulement pour data memory)
-    logic       hsdom_mem_we_tag    [NO_MEMS+1];
-    logic [3:0] hsdom_mem_wdata_tag [NO_MEMS+1];
-    logic [3:0] hsdom_mem_rdata_tag [NO_MEMS+1];
+    logic       hsdom_mem1_we_tag;
+    logic       hsdom_mem1_wdata_tag;
+    logic [3:0] hsdom_mem1_rdata_tag;
 `endif
 
     for (genvar i = 0; i < NO_MEMS; i++) begin
@@ -420,12 +418,6 @@ module adam #(
                     "/adam/mem0.hex" :
                     "/adam/mem1.hex"
                 )
-                `ifdef DIFT
-                ,
-                .TAG_HEXFILE (
-                    "/adam/mem1_tag.hex"
-                )
-                `endif
 `endif
             ) i_adam_mem (
                 .seq (hsdom_mem_seq[i]),
@@ -436,16 +428,30 @@ module adam #(
                 .be    (hsdom_mem_be   [i]),
                 .wdata (hsdom_mem_wdata[i]),
                 .rdata (hsdom_mem_rdata[i])
-            `ifdef DIFT
-                ,
-                .we_tag    (hsdom_mem_we_tag   [i]),
-                .be_tag    (hsdom_cpu_data_be_tag[i]),
-                .wdata_tag (hsdom_mem_wdata_tag[i]),
-                .rdata_tag (hsdom_mem_rdata_tag[i])
-            `endif
+            );
+`ifdef DIFT
+        // Mémoire de tags pour MEM[1] (RAM)
+        if (i == 1) begin : gen_tag_mem
+            adam_mem_tag #(
+                `ADAM_CFG_PARAMS_MAP,
+                .SIZE (MEM_SIZE[1]),  // Même taille que MEM[1]
+                .TAG_WIDTH (4)
+`ifndef SYNTHESIS
+                , .TAG_HEXFILE ("/adam/mem1_tag.hex")
+`endif
+            ) i_adam_mem_tag (
+                .seq       (hsdom_mem_seq[1]),
+                .req       (hsdom_mem_req[1]),
+                .addr      (hsdom_mem_addr[1]),       // Même adresse que RAM
+                .we_tag    (hsdom_mem1_we_tag),
+                .be_tag    (hsdom_mem_be[1]),         // Même byte enable que RAM
+                .wdata_tag (hsdom_mem1_wdata_tag),
+                .rdata_tag (hsdom_mem1_rdata_tag)
             );
         end
-    end
+`endif
+        end
+end
 
     // hsdom - hsp ===========================================================
 
@@ -664,16 +670,25 @@ module adam #(
     `ADAM_PAUSE_SLV_TIE_ON(lsdom_pause);
     `ADAM_PAUSE_SLV_TIE_ON(hsdom_pause);
 
-    // ============ CONNEXION DIRECTE CPU → MEMORY (BYPASS FABRIC) ============
+    // ============ CONNEXION DIRECTE CPU[0] → TAG_MEM[1] ============
 `ifdef DIFT
-    for (genvar i = 0; i < NO_CPUS; i++) begin
-        // CPU i connecté à MEM 1 (Data Memory)
-        assign hsdom_mem_we_tag[1]          = hsdom_cpu_data_we_tag[i];
-        assign hsdom_mem_wdata_tag[1]       = {3'b0, hsdom_cpu_data_wdata_tag[i]};  // 1 bit → 4 bits
-        assign hsdom_cpu_data_rdata_tag[i]  = hsdom_mem_rdata_tag[1];
-        assign hsdom_cpu_data_gnt_tag[i]    = hsdom_mem_req[1];  // Simple handshake
-        assign hsdom_cpu_data_rvalid_tag[i] = 1'b1;  // Toujours valide pour RAM synchrone
-    end
+    // Connexion cpu à la tag memory de MEM[1]
+    assign hsdom_mem1_we_tag           = hsdom_cpu_data_we_tag[0];
+    assign hsdom_mem1_wdata_tag        = hsdom_cpu_data_wdata_tag[0];
+    assign hsdom_cpu_data_rdata_tag[0] = hsdom_mem1_rdata_tag;
+    
+    // Grant et rvalid : même timing que la RAM normale
+    assign hsdom_cpu_data_gnt_tag[0]    = 1'b1;  // Toujours prêt
+    assign hsdom_cpu_data_rvalid_tag[0] = 1'b1;  // RAM synchrone
+    
+    // Tie-off des autres CPUs si NO_CPUS > 1
+    generate
+        for (genvar j = 1; j < NO_CPUS; j++) begin : gen_unused_cpu_tags
+            assign hsdom_cpu_data_rdata_tag[j]  = 4'b0;
+            assign hsdom_cpu_data_gnt_tag[j]    = 1'b1;
+            assign hsdom_cpu_data_rvalid_tag[j] = 1'b1;
+        end
+    endgenerate
 `endif
 
 endmodule

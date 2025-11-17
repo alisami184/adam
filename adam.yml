@@ -37,6 +37,7 @@ targets:
       ADAM_CORE_CPU: adam_core_cv32e40p
       ADAM_CORE_LPCPU: adam_core_ibex
       ADAM_ROM: bootloader_rom
+      DIFT    : 0
 
     rtl_fset:
       requires:
@@ -47,6 +48,7 @@ targets:
       sources:
         - bhv/adam_clk_gate.sv
         - fpga/adam_nexys_video.sv
+        - work/basys3/cmake/bootloader/bootloader_rom.sv
 
     bhv_fset:
       requires:
@@ -155,7 +157,7 @@ default:
     ADAM_CORE_CPU: adam_core_cv32e40p
     ADAM_CORE_LPCPU: adam_core_ibex
     ADAM_ROM: adam_mem
-    DIFT    : // Enable DIFT (Dynamic Information Flow Tracking)
+    DIFT    : 0 
 
   rtl_fset:
     requires:
@@ -363,9 +365,9 @@ fsets:
       - pause/adam_pause_mux_tb.sv
 
       - periph/aes/adam_aes_key_expansion_tb.sv
+      - periph/aes/adam_aes_core_simple_tb.sv
       - periph/aes/adam_aes_tb.sv
       - periph/aes/test_keys.sv
-      - periph/aes/adam_aes_core_simple_tb.sv
       - periph/gpio/adam_periph_gpio_tb.sv
       - periph/spi/adam_periph_spi_phy_tb.sv
       - periph/spi/adam_periph_spi_tb.sv
@@ -449,6 +451,7 @@ fsets:
       - fabric/adam_fabric.sv
 
       - adam_mem.sv
+      - adam_tag_mem.sv
       - adam.sv
       - adam_clk_div.sv
       - adam_top.sv

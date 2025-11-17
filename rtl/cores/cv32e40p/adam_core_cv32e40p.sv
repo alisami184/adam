@@ -21,9 +21,7 @@ module adam_core_cv32e40p #(
     ,
     // Vers Data Memory - Tags en écriture
     output logic       data_we_tag_o,
-    output logic       data_wdata_tag_o,
-    output logic [3:0] data_be_tag_o,
-    
+    output logic       data_wdata_tag_o,    
     // Depuis Data Memory - Tags en lecture
     input  logic [3:0] data_rdata_tag_i,
     input  logic       data_gnt_tag_i,
@@ -124,8 +122,7 @@ module adam_core_cv32e40p #(
         .data_wdata_tag_o  (data_wdata_tag_o),
         .data_rdata_tag_i  (data_rdata_tag_i),
         .data_gnt_tag_i    (data_gnt_tag_i),
-        .data_rvalid_tag_i (data_rvalid_tag_i),
-        .data_be_tag_o     (data_be_tag_o)
+        .data_rvalid_tag_i (data_rvalid_tag_i)
 `endif
     );
 
