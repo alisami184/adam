@@ -17,15 +17,21 @@ module adam_core_cv32e40p #(
     input  logic debug_req,
     output logic debug_unavail
 `ifdef DIFT
-    // ============ DIFT (PARALLÈLE) ============
+    // ============ DIFT - ACCÈS DIRECT RAM ============
     ,
-    // Vers Data Memory - Tags en écriture
-    output logic       data_we_tag_o,
-    output logic       data_wdata_tag_o,    
-    // Depuis Data Memory - Tags en lecture
-    input  logic [3:0] data_rdata_tag_i,
-    input  logic       data_gnt_tag_i,
-    input  logic       data_rvalid_tag_i
+    // Signaux OBI direct vers RAM
+    output logic  ram_req_o,
+    output ADDR_T ram_addr_o,
+    output logic  ram_we_o,
+    output STRB_T ram_be_o,
+    output DATA_T ram_wdata_o,
+    input  logic  ram_rvalid_i,
+    input  DATA_T ram_rdata_i,
+    
+    // Tags (parallèles, même timing)
+    output logic              ram_we_tag_o,
+    output logic              ram_wdata_tag_o,
+    input  logic [3 :0]       ram_rdata_tag_i
 `endif
 );
 
@@ -60,6 +66,11 @@ module adam_core_cv32e40p #(
     assign data_rready = 1;
 
     assign debug_unavail = pause.req || pause.ack;
+`ifdef DIFT
+    logic       data_we_tag;
+    logic       data_wdata_tag;
+    logic [3:0] data_rdata_tag;
+`endif
 
     cv32e40p_top #(
         .FPU              (1),
@@ -118,32 +129,97 @@ module adam_core_cv32e40p #(
 `ifdef DIFT
         // ============  DIFT ============
         ,
-        .data_we_tag_o     (data_we_tag_o),
-        .data_wdata_tag_o  (data_wdata_tag_o),
-        .data_rdata_tag_i  (data_rdata_tag_i),
-        .data_gnt_tag_i    (data_gnt_tag_i),
-        .data_rvalid_tag_i (data_rvalid_tag_i)
+        .data_we_tag_o     (data_we_tag),
+        .data_wdata_tag_o  (data_wdata_tag),
+        .data_rdata_tag_i  (data_rdata_tag),
+        .data_gnt_tag_i    (data_gnt),
+        .data_rvalid_tag_i (data_rvalid)
 `endif
     );
 
+
+`ifdef DIFT
+//  DEMUX ADDRESS (if ram => no axi , else use axi)======================================================
+    logic is_ram_addr;
+    logic is_periph_addr;
+
+    assign is_ram_addr    = (data_addr[31:24] == 8'h02) || (data_addr[31:24] == 8'h01);        // MEM[0] || MEM[1]
+    assign is_periph_addr = ~is_ram_addr;
+
+    // Split des requêtes
+    logic ram_req_core;
+    logic periph_req_core;
+    
+    assign ram_req_core    = data_req & is_ram_addr;
+    assign periph_req_core = data_req & is_periph_addr;
+
+    // ========== CHEMIN RAM DIRECT ==========
+    assign ram_req_o       = ram_req_core;
+    assign ram_addr_o      = data_addr;
+    assign ram_we_o        = data_we;
+    assign ram_be_o        = data_be;
+    assign ram_wdata_o     = data_wdata;
+    assign ram_we_tag_o    = data_we_tag;
+    assign ram_wdata_tag_o = data_wdata_tag;
+    // ram_rdata_i, ram_rvalid_i, ram_rdata_tag_i viennent de l'extérieur
+
+    // ========== CHEMIN PÉRIPHÉRIQUES (via AXI) ==========
+    logic periph_gnt;
+    logic periph_rvalid;
+    DATA_T periph_rdata;
+    
     adam_obi_to_axil #(
         `ADAM_CFG_PARAMS_MAP
-    ) instr_adam_obi_to_axil (
+    ) data_adam_obi_to_axil (
         .seq   (seq),
-        .pause (pause_inst),
+        .pause (pause_data),
 
-        .axil (axil_inst),
+        .axil (axil_data),
 
-        .req    (inst_req),
-        .gnt    (inst_gnt),
-        .addr   (inst_addr),
-        .we     ('0),
-        .be     ('0),
-        .wdata  ('0),
-        .rvalid (inst_rvalid),
-        .rready (inst_rready),
-        .rdata  (inst_rdata) 
+        .req    (periph_req_core),
+        .gnt    (periph_gnt),
+        .addr   (data_addr),
+        .we     (data_we),
+        .be     (data_be),
+        .wdata  (data_wdata),
+        .rvalid (periph_rvalid),
+        .rready (data_rready),
+        .rdata  (periph_rdata)
     );
+
+    // ========== MUX DE RÉPONSE ==========
+    // FSM pour tracker d'où vient la réponse
+    typedef enum logic {RESP_RAM, RESP_PERIPH} resp_state_t;
+    resp_state_t resp_state_q, resp_state_d;
+    
+    always_ff @(posedge seq.clk) begin
+        if (seq.rst) begin
+            resp_state_q <= RESP_RAM;
+        end else begin
+            resp_state_q <= resp_state_d;
+        end
+    end
+    
+    // Next state logic
+    always_comb begin
+        resp_state_d = resp_state_q;
+        
+        // Grant immédiat pour RAM (pas d'arbitrage)
+        if (ram_req_core) begin
+            resp_state_d = RESP_RAM;
+        end else if (periph_req_core && periph_gnt) begin
+            resp_state_d = RESP_PERIPH;
+        end
+    end
+    
+    // Grant et réponses vers le core
+    assign data_gnt = is_ram_addr ? 1'b1 : periph_gnt;  // RAM: gnt immédiat
+    
+    assign data_rvalid    = (resp_state_q == RESP_RAM) ? ram_rvalid_i    : periph_rvalid;
+    assign data_rdata     = (resp_state_q == RESP_RAM) ? ram_rdata_i     : periph_rdata;
+    assign data_rdata_tag = (resp_state_q == RESP_RAM) ? ram_rdata_tag_i : 4'b0;
+
+`else
 
     adam_obi_to_axil #(
         `ADAM_CFG_PARAMS_MAP
@@ -162,6 +238,26 @@ module adam_core_cv32e40p #(
         .rvalid (data_rvalid),
         .rready (data_rready),
         .rdata  (data_rdata) 
+    );
+`endif
+
+    adam_obi_to_axil #(
+        `ADAM_CFG_PARAMS_MAP
+    ) instr_adam_obi_to_axil (
+        .seq   (seq),
+        .pause (pause_inst),
+
+        .axil (axil_inst),
+
+        .req    (inst_req),
+        .gnt    (inst_gnt),
+        .addr   (inst_addr),
+        .we     ('0),
+        .be     ('0),
+        .wdata  ('0),
+        .rvalid (inst_rvalid),
+        .rready (inst_rready),
+        .rdata  (inst_rdata) 
     );
 
     // pause ==================================================================

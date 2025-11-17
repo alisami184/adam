@@ -307,12 +307,18 @@ module adam #(
 
 
 `ifdef DIFT
-    logic       hsdom_cpu_data_we_tag    [NO_CPUS+1];
-    logic       hsdom_cpu_data_wdata_tag [NO_CPUS+1];
-    logic [3:0] hsdom_cpu_data_rdata_tag [NO_CPUS+1];
-    logic       hsdom_cpu_data_gnt_tag   [NO_CPUS+1];
-    logic       hsdom_cpu_data_rvalid_tag[NO_CPUS+1];
-    logic [3:0] hsdom_cpu_data_be_tag    [NO_CPUS+1];
+    // Signaux OBI direct CPU → RAM
+    logic  hsdom_cpu0_ram_req;
+    ADDR_T hsdom_cpu0_ram_addr;
+    logic  hsdom_cpu0_ram_we;
+    STRB_T hsdom_cpu0_ram_be;
+    DATA_T hsdom_cpu0_ram_wdata;
+    logic  hsdom_cpu0_ram_rvalid;
+    DATA_T hsdom_cpu0_ram_rdata;
+    // Tags
+    logic              hsdom_cpu0_ram_we_tag;
+    logic              hsdom_cpu0_ram_wdata_tag;
+    logic [3:0]        hsdom_cpu0_ram_rdata_tag;
 `endif
 
     for (genvar i = 0; i < NO_CPUS; i++) begin
@@ -337,11 +343,18 @@ module adam #(
             .debug_unavail (hsdom_debug_unavail[i+1])
 `ifdef DIFT
             ,
-            .data_we_tag_o     (hsdom_cpu_data_we_tag[i]),
-            .data_wdata_tag_o  (hsdom_cpu_data_wdata_tag[i]),
-            .data_rdata_tag_i  (hsdom_cpu_data_rdata_tag[i]),
-            .data_gnt_tag_i    (hsdom_cpu_data_gnt_tag[i]),
-            .data_rvalid_tag_i (hsdom_cpu_data_rvalid_tag[i])
+            // Connexions directes RAM (seulement CPU 0 pour le moment)
+            .ram_req_o       ((i == 0) ? hsdom_cpu0_ram_req       : /* à implémenter pour autres CPUs */),
+            .ram_addr_o      ((i == 0) ? hsdom_cpu0_ram_addr      : /* à implémenter */),
+            .ram_we_o        ((i == 0) ? hsdom_cpu0_ram_we        : /* à implémenter */),
+            .ram_be_o        ((i == 0) ? hsdom_cpu0_ram_be        : /* à implémenter */),
+            .ram_wdata_o     ((i == 0) ? hsdom_cpu0_ram_wdata     : /* à implémenter */),
+            .ram_rvalid_i    ((i == 0) ? hsdom_cpu0_ram_rvalid    : 1'b0),
+            .ram_rdata_i     ((i == 0) ? hsdom_cpu0_ram_rdata     : '0),
+
+            .ram_we_tag_o    ((i == 0) ? hsdom_cpu0_ram_we_tag    : /* à implémenter */),
+            .ram_wdata_tag_o ((i == 0) ? hsdom_cpu0_ram_wdata_tag : /* à implémenter */),
+            .ram_rdata_tag_i ((i == 0) ? hsdom_cpu0_ram_rdata_tag : '0)
 `endif
         );
     end
@@ -418,6 +431,9 @@ module adam #(
                     "/adam/mem0.hex" :
                     "/adam/mem1.hex"
                 )
+`ifdef DIFT
+            , .TAG_HEXFILE ((i == 1) ? "/adam/mem1_tag.hex" : "")
+`endif
 `endif
             ) i_adam_mem (
                 .seq (hsdom_mem_seq[i]),
