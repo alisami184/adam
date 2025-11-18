@@ -1,3 +1,21 @@
+
+/*
+ * Copyright 2025 LIRMM
+ * 
+ * adam_core_cv32e40p.sv
+ * 
+ * Wrapper pour CV32E40P avec DEMUX d'adresse:
+ * - Accès RAM (MEM[1] = 0x02xxxxxx) → OBI DIRECT
+ * - Accès ROM (MEM[0] = 0x01xxxxxx) + Périphériques → OBI→AXI conversion
+ * 
+ * Architecture:
+ *   CV32E40P Core
+ *   ├─ instr_* (OBI) → adam_obi_to_axil → axil_inst
+ *   └─ data_* (OBI)  → DEMUX basé sur adresse
+ *                       ├─ Si RAM (0x02xxxxxx) → ram_* (OBI direct)
+ *                       └─ Sinon → adam_obi_to_axil → axil_data
+ */
+
 `include "adam/macros.svh"
 
 module adam_core_cv32e40p #(
@@ -9,29 +27,31 @@ module adam_core_cv32e40p #(
     input ADDR_T boot_addr,
     input DATA_T hart_id,
 
-    AXI_LITE.Master axil_inst,
-    AXI_LITE.Master axil_data,
+    // ============ AXI-Lite Interfaces ============
+    AXI_LITE.Master axil_inst,    // Instructions → MEM[0] (ROM)
+    AXI_LITE.Master axil_data,    // Périphériques
 
     input logic irq,
     
     input  logic debug_req,
-    output logic debug_unavail
-`ifdef DIFT
-    // ============ DIFT - ACCÈS DIRECT RAM ============
-    ,
-    // Signaux OBI direct vers RAM
+    output logic debug_unavail,
+
+    // ============ OBI Direct vers RAM (MEM[1]) ============
     output logic  ram_req_o,
     output ADDR_T ram_addr_o,
     output logic  ram_we_o,
     output STRB_T ram_be_o,
     output DATA_T ram_wdata_o,
     input  logic  ram_rvalid_i,
-    input  DATA_T ram_rdata_i,
-    
-    // Tags (parallèles, même timing)
-    output logic              ram_we_tag_o,
-    output logic              ram_wdata_tag_o,
-    input  logic [3 :0]       ram_rdata_tag_i
+    input  DATA_T ram_rdata_i
+`ifdef DIFT
+    // ============ DIFT (PARALLÈLE) ============
+    ,
+    // Vers Data Memory - Tags en écriture
+    output logic       we_tag,
+    output logic       wdata_tag,    
+    // Depuis Data Memory - Tags en lecture
+    input  logic [3:0] rdata_tag
 `endif
 );
 
@@ -66,11 +86,6 @@ module adam_core_cv32e40p #(
     assign data_rready = 1;
 
     assign debug_unavail = pause.req || pause.ack;
-`ifdef DIFT
-    logic       data_we_tag;
-    logic       data_wdata_tag;
-    logic [3:0] data_rdata_tag;
-`endif
 
     cv32e40p_top #(
         .FPU              (1),
@@ -129,54 +144,76 @@ module adam_core_cv32e40p #(
 `ifdef DIFT
         // ============  DIFT ============
         ,
-        .data_we_tag_o     (data_we_tag),
-        .data_wdata_tag_o  (data_wdata_tag),
-        .data_rdata_tag_i  (data_rdata_tag),
+        .data_we_tag_o     (we_tag),
+        .data_wdata_tag_o  (wdata_tag),
+        .data_rdata_tag_i  (rdata_tag),
         .data_gnt_tag_i    (data_gnt),
         .data_rvalid_tag_i (data_rvalid)
 `endif
     );
 
+    // ========================================================================
+    // DEMUX D'ADRESSE - Routage DATA seulement
+    // ========================================================================
+    //
+    // Décodage basé sur la carte mémoire ADAM:
+    // 
+    // INSTRUCTIONS (instr_*):
+    // - ROM (MEM[0]) : 0x01000000 - 0x01FFFFFF → Via AXI (pas de DEMUX)
+    //
+    // DATA (data_*):
+    // - RAM (MEM[1]) : 0x02000000 - 0x02FFFFFF → OBI DIRECT
+    // - PÉRIPH       : Autres adresses           → Via AXI
+    //
+    // ========================================================================
 
-`ifdef DIFT
-//  DEMUX ADDRESS (if ram => no axi , else use axi)======================================================
-    logic is_ram_addr;
-    logic is_periph_addr;
+    logic is_ram_addr;      // True si accès DATA vers RAM (MEM[1])
+    logic is_periph_addr;   // True si accès DATA vers périphériques
 
-    assign is_ram_addr    = (data_addr[31:24] == 8'h02) || (data_addr[31:24] == 8'h01);        // MEM[0] || MEM[1]
-    assign is_periph_addr = ~is_ram_addr;
+    // Décodage d'adresse (seulement pour DATA)
+    assign is_ram_addr    = (data_addr[31:24] == 8'h02);  // RAM = 0x02xxxxxx
+    assign is_periph_addr = ~is_ram_addr;                 // PÉRIPH = tout le reste
 
-    // Split des requêtes
+    // ========================================================================
+    // CHEMIN RAM - OBI DIRECT
+    // ========================================================================
+
     logic ram_req_core;
-    logic periph_req_core;
     
-    assign ram_req_core    = data_req & is_ram_addr;
-    assign periph_req_core = data_req & is_periph_addr;
+    assign ram_req_core = data_req & is_ram_addr;
+    
+    // Connexion directe vers RAM (pas de conversion)
+    assign ram_req_o   = ram_req_core;
+    assign ram_addr_o  = data_addr;
+    assign ram_we_o    = data_we;
+    assign ram_be_o    = data_be;
+    assign ram_wdata_o = data_wdata;
+    
+    // ram_gnt_i et ram_rvalid_i viennent de l'extérieur (MEM[1])
+    // ram_rdata_i vient de l'extérieur (MEM[1])
 
-    // ========== CHEMIN RAM DIRECT ==========
-    assign ram_req_o       = ram_req_core;
-    assign ram_addr_o      = data_addr;
-    assign ram_we_o        = data_we;
-    assign ram_be_o        = data_be;
-    assign ram_wdata_o     = data_wdata;
-    assign ram_we_tag_o    = data_we_tag;
-    assign ram_wdata_tag_o = data_wdata_tag;
-    // ram_rdata_i, ram_rvalid_i, ram_rdata_tag_i viennent de l'extérieur
+    // ========================================================================
+    // CHEMIN PÉRIPHÉRIQUES - OBI → AXI
+    // ========================================================================
 
-    // ========== CHEMIN PÉRIPHÉRIQUES (via AXI) ==========
-    logic periph_gnt;
-    logic periph_rvalid;
+    logic  periph_req;
+    logic  periph_gnt;
+    logic  periph_rvalid;
     DATA_T periph_rdata;
     
+    assign periph_req = data_req & is_periph_addr;
+
+    // Conversion OBI → AXI-Lite pour périphériques
     adam_obi_to_axil #(
         `ADAM_CFG_PARAMS_MAP
-    ) data_adam_obi_to_axil (
+    ) data_obi_to_axil (
         .seq   (seq),
         .pause (pause_data),
 
         .axil (axil_data),
 
-        .req    (periph_req_core),
+        // Signaux OBI depuis le core (filtrés par DEMUX)
+        .req    (periph_req),
         .gnt    (periph_gnt),
         .addr   (data_addr),
         .we     (data_we),
@@ -186,64 +223,57 @@ module adam_core_cv32e40p #(
         .rready (data_rready),
         .rdata  (periph_rdata)
     );
+    // ========================================================================
+    // MUX DE RÉPONSE - Routage vers le Core
+    // ========================================================================
+    //
+    // Le core doit recevoir gnt/rvalid/rdata de la bonne source
+    // On utilise une FSM simple pour tracker d'où viendra la réponse
+    //
+    // ========================================================================
 
-    // ========== MUX DE RÉPONSE ==========
-    // FSM pour tracker d'où vient la réponse
-    typedef enum logic {RESP_RAM, RESP_PERIPH} resp_state_t;
+    typedef enum logic {
+        RESP_RAM,     // Réponse attendue depuis RAM
+        RESP_PERIPH   // Réponse attendue depuis Périphériques (via AXI)
+    } resp_state_t;
+
     resp_state_t resp_state_q, resp_state_d;
-    
+
+    // FSM - Flip-flop
     always_ff @(posedge seq.clk) begin
         if (seq.rst) begin
-            resp_state_q <= RESP_RAM;
+            resp_state_q <= RESP_PERIPH;
         end else begin
             resp_state_q <= resp_state_d;
         end
     end
-    
-    // Next state logic
+
+    // FSM - Next state logic
     always_comb begin
         resp_state_d = resp_state_q;
         
-        // Grant immédiat pour RAM (pas d'arbitrage)
-        if (ram_req_core) begin
+        // Quand une requête est acceptée (gnt), on sait d'où viendra la réponse
+        if (ram_req_core ) begin
             resp_state_d = RESP_RAM;
-        end else if (periph_req_core && periph_gnt) begin
+        end else if (periph_req ) begin
             resp_state_d = RESP_PERIPH;
         end
     end
-    
-    // Grant et réponses vers le core
-    assign data_gnt = is_ram_addr ? 1'b1 : periph_gnt;  // RAM: gnt immédiat
-    
-    assign data_rvalid    = (resp_state_q == RESP_RAM) ? ram_rvalid_i    : periph_rvalid;
-    assign data_rdata     = (resp_state_q == RESP_RAM) ? ram_rdata_i     : periph_rdata;
-    assign data_rdata_tag = (resp_state_q == RESP_RAM) ? ram_rdata_tag_i : 4'b0;
 
-`else
+    // MUX - Grant vers le core
+    assign data_gnt = 1'b1;
 
-    adam_obi_to_axil #(
-        `ADAM_CFG_PARAMS_MAP
-    ) data_adam_obi_to_axil (
-        .seq   (seq),
-        .pause (pause_data),
+    // MUX - Réponse vers le core (basé sur l'état FSM)
+    assign data_rvalid = (resp_state_q == RESP_RAM) ? ram_rvalid_i : periph_rvalid;
+    assign data_rdata  = (resp_state_q == RESP_RAM) ? ram_rdata_i  : periph_rdata;
 
-        .axil (axil_data),
-
-        .req    (data_req),
-        .gnt    (data_gnt),
-        .addr   (data_addr),
-        .we     (data_we),
-        .be     (data_be),
-        .wdata  (data_wdata),
-        .rvalid (data_rvalid),
-        .rready (data_rready),
-        .rdata  (data_rdata) 
-    );
-`endif
+    // ========================================================================
+    // INSTRUCTIONS - OBI → AXI (ROM via MEM[0])
+    // ========================================================================
 
     adam_obi_to_axil #(
         `ADAM_CFG_PARAMS_MAP
-    ) instr_adam_obi_to_axil (
+    ) instr_obi_to_axil (
         .seq   (seq),
         .pause (pause_inst),
 
@@ -252,12 +282,12 @@ module adam_core_cv32e40p #(
         .req    (inst_req),
         .gnt    (inst_gnt),
         .addr   (inst_addr),
-        .we     ('0),
-        .be     ('0),
-        .wdata  ('0),
+        .we     (1'b0),
+        .be     (4'b0),
+        .wdata  (32'b0),
         .rvalid (inst_rvalid),
         .rready (inst_rready),
-        .rdata  (inst_rdata) 
+        .rdata  (inst_rdata)
     );
 
     // pause ==================================================================
@@ -284,3 +314,4 @@ module adam_core_cv32e40p #(
     );
 
 endmodule
+
