@@ -305,7 +305,6 @@ module adam #(
 
     // hsdom - cpu ============================================================
 
-
 `ifdef DIFT
     // Signaux OBI direct CPU → RAM
     logic  hsdom_cpu0_ram_req;
@@ -381,14 +380,6 @@ module adam #(
     DATA_T hsdom_mem_wdata [NO_MEMS+1];
     DATA_T hsdom_mem_rdata [NO_MEMS+1];
 
-`ifdef DIFT
-    logic       hsdom_mem1_we_tag;
-    logic       hsdom_mem1_wdata_tag;
-    logic [3:0] hsdom_mem1_rdata_tag;
-    // Signal pour rdata_tag des mémoires qui ne l'utilisent pas (MEM[0])
-    logic [3:0] unused_mem_rdata_tag [NO_MEMS+1];
-`endif
-
     for (genvar i = 0; i < NO_MEMS; i++) begin
         assign hsdom_mem_seq[i].clk = lsdom_seq.clk;
         assign hsdom_mem_seq[i].rst = lsdom_seq.rst || hsdom_mem_rst[i];
@@ -424,64 +415,104 @@ module adam #(
             );
         end
         else begin
+`ifdef DIFT
+            // ============ Génération conditionnelle pour MEM[1] vs autres ============
+            if (i == 1) begin : gen_ram_with_dift
+                // MEM[1] : RAM avec DIFT - connexion directe CPU
+                adam_mem #(
+                    `ADAM_CFG_PARAMS_MAP,
+                    .SIZE (MEM_SIZE[i])
+`ifndef SYNTHESIS
+                    , .HEXFILE ("/adam/mem1.hex")
+                    , .TAG_HEXFILE ("/adam/mem1_tag.hex")
+`endif
+                ) i_adam_mem (
+                    .seq   (hsdom_mem_seq[i]),
+                    .req   (hsdom_cpu0_ram_req),
+                    .addr  (hsdom_cpu0_ram_addr),
+                    .we    (hsdom_cpu0_ram_we),
+                    .be    (hsdom_cpu0_ram_be),
+                    .wdata (hsdom_cpu0_ram_wdata),
+                    .rdata (hsdom_mem_rdata[i]),
+                    
+                    // Tags pour RAM
+                    .we_tag    (hsdom_cpu0_ram_we_tag),
+                    .wdata_tag (hsdom_cpu0_ram_wdata_tag),
+                    .rdata_tag (hsdom_cpu0_ram_rdata_tag)
+                );
+            end
+            else begin : gen_mem_without_dift
+                // MEM[0] ou autres : mémoire sans tags DIFT
+                logic [3:0] unused_rdata_tag;  // Signal local pour absorber la sortie
+                
+                adam_mem #(
+                    `ADAM_CFG_PARAMS_MAP,
+                    .SIZE (MEM_SIZE[i])
+`ifndef SYNTHESIS
+                    , .HEXFILE ("/adam/mem0.hex")
+                    , .TAG_HEXFILE ("")
+`endif
+                ) i_adam_mem (
+                    .seq   (hsdom_mem_seq[i]),
+                    .req   (hsdom_mem_req[i]),
+                    .addr  (hsdom_mem_addr[i]),
+                    .we    (hsdom_mem_we[i]),
+                    .be    (hsdom_mem_be[i]),
+                    .wdata (hsdom_mem_wdata[i]),
+                    .rdata (hsdom_mem_rdata[i]),
+                    
+                    // Tags non utilisés pour MEM[0]
+                    .we_tag    (1'b0),
+                    .wdata_tag (1'b0),
+                    .rdata_tag (unused_rdata_tag)  // Signal local, pas de problème
+                );
+            end
+`else
+            // ============ PAS DE DIFT : tout via AXI ============
             adam_mem #(
                 `ADAM_CFG_PARAMS_MAP,
                 .SIZE (MEM_SIZE[i])
-
 `ifndef SYNTHESIS
                 , .HEXFILE ((i == 0) ? "/adam/mem0.hex" : "/adam/mem1.hex")
-`ifdef DIFT
-                // Tag hexfile seulement pour MEM[1] (RAM)
-                , .TAG_HEXFILE ((i == 1) ? "/adam/mem1_tag.hex" : "")
-`endif
 `endif
             ) i_adam_mem (
-                .seq (hsdom_mem_seq[i]),
-
-`ifdef DIFT
-                // ============ MEM[1] (RAM) : ACCÈS DIRECT CPU ============
-                .req   ((i == 1) ? hsdom_cpu0_ram_req    : hsdom_mem_req[i]),
-                .addr  ((i == 1) ? hsdom_cpu0_ram_addr   : hsdom_mem_addr[i]),
-                .we    ((i == 1) ? hsdom_cpu0_ram_we     : hsdom_mem_we[i]),
-                .be    ((i == 1) ? hsdom_cpu0_ram_be     : hsdom_mem_be[i]),
-                .wdata ((i == 1) ? hsdom_cpu0_ram_wdata  : hsdom_mem_wdata[i]),
-                .rdata (hsdom_mem_rdata[i]),
-                
-                // Tags (seulement pour MEM[1])
-                .we_tag    ((i == 1) ? hsdom_cpu0_ram_we_tag    : 1'b0),
-                .wdata_tag ((i == 1) ? hsdom_cpu0_ram_wdata_tag : 1'b0),
-                .rdata_tag ((i == 1) ? hsdom_cpu0_ram_rdata_tag : unused_mem_rdata_tag[i])
-`else
-                // ============ PAS DE DIFT : tout via AXI ============
+                .seq   (hsdom_mem_seq[i]),
                 .req   (hsdom_mem_req  [i]),
                 .addr  (hsdom_mem_addr [i]),
                 .we    (hsdom_mem_we   [i]),
                 .be    (hsdom_mem_be   [i]),
                 .wdata (hsdom_mem_wdata[i]),
                 .rdata (hsdom_mem_rdata[i])
-`endif
             );
+`endif
         end
     end
+    
 `ifdef DIFT
     // ============ GÉNÉRATION DE RVALID POUR MEM[1] → CPU ============
     //
     // La RAM est synchrone : rvalid arrive 1 cycle après req
+    // Utiliser reg pour pouvoir l'assigner dans always_ff
     //
+    reg hsdom_cpu0_ram_rvalid_reg;
+    
     always_ff @(posedge lsdom_seq.clk) begin
         if (lsdom_seq.rst) begin
-            hsdom_cpu0_ram_rvalid <= 1'b0;
+            hsdom_cpu0_ram_rvalid_reg <= 1'b0;
         end else begin
-            hsdom_cpu0_ram_rvalid <= hsdom_cpu0_ram_req;
+            hsdom_cpu0_ram_rvalid_reg <= hsdom_cpu0_ram_req;
         end
     end
     
+    assign hsdom_cpu0_ram_rvalid = hsdom_cpu0_ram_rvalid_reg;
+    
     // ============ ROUTAGE RDATA VERS CPU ============
     //
-    // MEM[1] rdata connecté directement
+    // hsdom_cpu0_ram_rdata_tag est connecté directement depuis le port .rdata_tag de MEM[1]
     //
     assign hsdom_cpu0_ram_rdata = hsdom_mem_rdata[1];
 `endif
+
     // hsdom - hsp ===========================================================
 
     ADAM_SEQ hsdom_hsp_seq ();
