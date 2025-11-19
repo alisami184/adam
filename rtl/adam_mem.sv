@@ -20,16 +20,16 @@ module adam_mem #(
     `ADAM_CFG_PARAMS,
 
     parameter SIZE = 4096
-`ifdef DIFT
-    ,   
-    parameter TAG_WIDTH = 4
-`endif
+// `ifdef DIFT
+//     ,   
+//     parameter TAG_WIDTH = 4
+// `endif
 
 `ifndef SYNTHESIS
     , parameter string HEXFILE = ""
-    `ifdef DIFT
-    , parameter string TAG_HEXFILE = ""
-    `endif
+    // `ifdef DIFT
+    // , parameter string TAG_HEXFILE = ""
+    // `endif
 `endif
 ) (
     ADAM_SEQ.Slave seq,
@@ -40,12 +40,12 @@ module adam_mem #(
     input  STRB_T be,
     input  DATA_T wdata,
     output DATA_T rdata
-`ifdef DIFT
-    ,
-    input logic   we_tag,
-    input logic   wdata_tag,
-    output logic [TAG_WIDTH-1:0] rdata_tag
-`endif
+// `ifdef DIFT
+//     ,
+//     input logic   we_tag,
+//     input logic   wdata_tag,
+//     output logic [TAG_WIDTH-1:0] rdata_tag
+// `endif
 );
 
     localparam UNALIGNED_WIDTH = $clog2(STRB_WIDTH);
@@ -54,16 +54,16 @@ module adam_mem #(
 
     (* ram_style = "block" *)
     reg [DATA_WIDTH-1:0] mem [ALIGNED_SIZE-1:0];
-`ifdef DIFT
-    (* ram_style = "block" *)
-    reg [TAG_WIDTH-1:0] tag_mem [ALIGNED_SIZE-1:0];
-`endif
+// `ifdef DIFT
+//     (* ram_style = "block" *)
+//     reg [TAG_WIDTH-1:0] tag_mem [ALIGNED_SIZE-1:0];
+// `endif
 
 `ifndef SYNTHESIS
     initial $readmemh(HEXFILE, mem);
-    `ifdef DIFT
-        initial $readmemh(TAG_HEXFILE, tag_mem);
-    `endif
+    // `ifdef DIFT
+    //     initial $readmemh(TAG_HEXFILE, tag_mem);
+    // `endif
 `endif
 
     logic [ALIGNED_WIDTH-1:0] aligned;
@@ -84,20 +84,20 @@ module adam_mem #(
         end
     end
     
-`ifdef DIFT
-    always_ff @(posedge seq.clk) begin
-        if (we_tag) begin
-            for (int i = 0; i < STRB_WIDTH; i++) begin
-                if (be[i]) begin
-                    tag_mem[aligned][i] <= wdata_tag;
-                end
-            end
-            rdata_tag <= tag_mem[aligned];
-        end
-        else begin
-            rdata_tag <= tag_mem[aligned];
-        end
-    end
-`endif
+// `ifdef DIFT
+//     always_ff @(posedge seq.clk) begin
+//         if (we_tag) begin
+//             for (int i = 0; i < STRB_WIDTH; i++) begin
+//                 if (be[i]) begin
+//                     tag_mem[aligned][i] <= wdata_tag;
+//                 end
+//             end
+//             rdata_tag <= tag_mem[aligned];
+//         end
+//         else begin
+//             rdata_tag <= tag_mem[aligned];
+//         end
+//     end
+// `endif
 
 endmodule

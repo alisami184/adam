@@ -305,7 +305,7 @@ module adam #(
 
     // hsdom - cpu ============================================================
 
-`ifdef DIFT
+
     // Signaux OBI direct CPU → RAM
     logic  hsdom_cpu0_ram_req;
     ADDR_T hsdom_cpu0_ram_addr;
@@ -314,6 +314,7 @@ module adam #(
     DATA_T hsdom_cpu0_ram_wdata;
     logic  hsdom_cpu0_ram_rvalid;
     DATA_T hsdom_cpu0_ram_rdata;
+`ifdef DIFT
     // Tags
     logic              hsdom_cpu0_ram_we_tag;
     logic              hsdom_cpu0_ram_wdata_tag;
@@ -434,28 +435,38 @@ module adam #(
         end
     end
         
-    // ============ GÉNÉRATION DE RVALID POUR MEM[1] → CPU ============
-    //
-    // La RAM est synchrone : rvalid arrive 1 cycle après req
-    // Utiliser reg pour pouvoir l'assigner dans always_ff
-    //
-    reg hsdom_cpu0_ram_rvalid_reg;
-    
-    always_ff @(posedge lsdom_seq.clk) begin
-        if (lsdom_seq.rst) begin
-            hsdom_cpu0_ram_rvalid_reg <= 1'b0;
+    logic hsdom_cpu0_ram_req_q;
+    logic hsdom_cpu0_ram_req_is_ram;
+    logic hsdom_cpu0_ram_req_is_ram_q;
+    logic hsdom_cpu0_ram_rvalid_reg;
+
+    // Vérifier que l'adresse est bien vers RAM
+    assign hsdom_cpu0_ram_req_is_ram = (hsdom_cpu0_ram_addr[31:24] == 8'h02);
+
+    always_ff @(posedge hsdom_seq.clk) begin
+        if (hsdom_seq.rst) begin
+            hsdom_cpu0_ram_req_q        <= 1'b0;
+            hsdom_cpu0_ram_req_is_ram_q <= 1'b0;
+            hsdom_cpu0_ram_rvalid_reg   <= 1'b0;
         end else begin
-            hsdom_cpu0_ram_rvalid_reg <= hsdom_cpu0_ram_req;
+            // Capturer req et is_ram du cycle N
+            hsdom_cpu0_ram_req_q        <= hsdom_cpu0_ram_req;
+            hsdom_cpu0_ram_req_is_ram_q <= hsdom_cpu0_ram_req_is_ram;
+            
+            // ✅ CORRECTION : Utiliser VERSIONS RETARDÉES !
+            // rvalid au cycle N+1 SEULEMENT si :
+            // - req était présent au cycle N (req_q && !req = pulse)
+            // - ET l'adresse du cycle N était vers RAM (req_is_ram_q)
+            hsdom_cpu0_ram_rvalid_reg <= hsdom_cpu0_ram_req_q && 
+                                        !hsdom_cpu0_ram_req &&
+                                        hsdom_cpu0_ram_req_is_ram_q;  // ← VERSION Q !
         end
     end
-    
+
     assign hsdom_cpu0_ram_rvalid = hsdom_cpu0_ram_rvalid_reg;
+    assign hsdom_cpu0_ram_rdata  = hsdom_mem_rdata[1];
     
-    // ============ ROUTAGE RDATA VERS CPU ============
-    //
-    // hsdom_cpu0_ram_rdata_tag est connecté directement depuis le port .rdata_tag de MEM[1]
-    //
-    assign hsdom_cpu0_ram_rdata = hsdom_mem_rdata[1];
+
     // hsdom - hsp ===========================================================
 
     ADAM_SEQ hsdom_hsp_seq ();
