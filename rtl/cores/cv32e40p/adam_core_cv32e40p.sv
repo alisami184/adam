@@ -1,21 +1,3 @@
-
-/*
- * Copyright 2025 LIRMM
- * 
- * adam_core_cv32e40p.sv
- * 
- * Wrapper pour CV32E40P avec DEMUX d'adresse:
- * - Accès RAM (MEM[1] = 0x02xxxxxx) → OBI DIRECT
- * - Accès ROM (MEM[0] = 0x01xxxxxx) + Périphériques → OBI→AXI conversion
- * 
- * Architecture:
- *   CV32E40P Core
- *   ├─ instr_* (OBI) → adam_obi_to_axil → axil_inst
- *   └─ data_* (OBI)  → DEMUX basé sur adresse
- *                       ├─ Si RAM (0x02xxxxxx) → ram_* (OBI direct)
- *                       └─ Sinon → adam_obi_to_axil → axil_data
- */
-
 `include "adam/macros.svh"
 
 module adam_core_cv32e40p #(
@@ -27,32 +9,16 @@ module adam_core_cv32e40p #(
     input ADDR_T boot_addr,
     input DATA_T hart_id,
 
-    // ============ AXI-Lite Interfaces ============
-    AXI_LITE.Master axil_inst,    // Instructions → MEM[0] (ROM)
-    AXI_LITE.Master axil_data,    // Périphériques
+    AXI_LITE.Master axil_inst,
+    AXI_LITE.Master axil_data,
+`ifdef DIFT
+    AXI_LITE.Master axil_tags,  // ✅ 3e port AXI pour tags
+`endif
 
     input logic irq,
     
     input  logic debug_req,
-    output logic debug_unavail,
-
-    // ============ OBI Direct vers RAM (MEM[1]) ============
-    output logic  ram_req_o,
-    output ADDR_T ram_addr_o,
-    output logic  ram_we_o,
-    output STRB_T ram_be_o,
-    output DATA_T ram_wdata_o,
-    input  logic  ram_rvalid_i,
-    input  DATA_T ram_rdata_i
-`ifdef DIFT
-    // ============ DIFT (PARALLÈLE) ============
-    ,
-    // Vers Data Memory - Tags en écriture
-    output logic       we_tag,
-    output logic       wdata_tag,    
-    // Depuis Data Memory - Tags en lecture
-    input  logic [3:0] rdata_tag
-`endif
+    output logic debug_unavail
 );
 
     ADAM_PAUSE pause_inst ();
@@ -77,16 +43,31 @@ module adam_core_cv32e40p #(
     DATA_T data_wdata;
     logic  data_we;
     DATA_T data_rdata;
+
+`ifdef DIFT
+    // ========================================================================
+    // SIGNAUX DIFT DEPUIS/VERS LE CORE
+    // ========================================================================
+    logic       data_we_tag;
+    logic       data_wdata_tag;
+    logic       data_gnt_tag;
+    logic       data_rvalid_tag;
+    logic [3:0] data_rdata_tag;
+`endif
+
+    assign debug_unavail = 1'b0;
+    assign inst_rready = 1'b1;
+    assign inst_be     = '0;
+    assign inst_wdata  = '0;
+    assign inst_we     = 1'b0;
+
+    assign data_rready = 1'b1;
+
+
+    // ========================================================================
+    // CV32E40P CORE
+    // ========================================================================
     
-    assign inst_rready = 1;
-    assign inst_be     = 0;
-    assign inst_wdata  = 0;
-    assign inst_we     = 0;
-
-    assign data_rready = 1;
-
-    assign debug_unavail = pause.req || pause.ack;
-
     cv32e40p_top #(
         .FPU              (1),
         .FPU_ADDMUL_LAT   (2),
@@ -142,189 +123,23 @@ module adam_core_cv32e40p #(
         .debug_halted_o    ()
 
 `ifdef DIFT
-        // ============  DIFT ============
+        // DIFT signals
         ,
-        .data_we_tag_o     (we_tag),
-        .data_wdata_tag_o  (wdata_tag),
-        .data_rdata_tag_i  (rdata_tag),
-        .data_gnt_tag_i    (data_gnt),
-        .data_rvalid_tag_i (data_rvalid)
+        .data_we_tag_o     (data_we_tag),
+        .data_wdata_tag_o  (data_wdata_tag),
+        .data_rdata_tag_i  (data_rdata_tag),
+        .data_gnt_tag_i    (data_gnt_tag),
+        .data_rvalid_tag_i (data_rvalid_tag)
 `endif
     );
-    // ========================================================================
-    // DEMUX D'ADRESSE - Routage DATA seulement
-    // ========================================================================
-
-    logic is_ram_addr;
-    logic is_periph_addr;
-
-    assign is_ram_addr    = (data_addr[31:24] == 8'h02);
-    assign is_periph_addr = ~is_ram_addr;     // PERIPH seulement
 
     // ========================================================================
-    // CHEMIN RAM - OBI DIRECT
+    // INSTRUCTIONS OBI → AXI (Inchangé)
     // ========================================================================
-
-    logic ram_req_core;
-    logic ram_gnt_core;
-
-    assign ram_req_core = data_req & is_ram_addr;
-    assign ram_gnt_core = ram_req_core;  // RAM synchrone : gnt immédiat
-
-    assign ram_req_o   = ram_req_core;
-    assign ram_addr_o  = data_addr;
-    assign ram_we_o    = data_we;
-    assign ram_be_o    = data_be;
-    assign ram_wdata_o = data_wdata;
-
-    // ========================================================================
-    // CHEMIN PÉRIPHÉRIQUES - OBI → AXI
-    // ========================================================================
-
-    logic  periph_req;
-    logic  periph_gnt;
-    logic  periph_rvalid;
-    DATA_T periph_rdata;
-
-    assign periph_req = data_req & is_periph_addr;
-
+    
     adam_obi_to_axil #(
         `ADAM_CFG_PARAMS_MAP
-    ) data_obi_to_axil (
-        .seq   (seq),
-        .pause (pause_data),
-
-        .axil (axil_data),
-
-        .req    (periph_req),
-        .gnt    (periph_gnt),
-        .addr   (data_addr),
-        .we     (data_we),
-        .be     (data_be),
-        .wdata  (data_wdata),
-        .rvalid (periph_rvalid),
-        .rready (data_rready),
-        .rdata  (periph_rdata)
-    );
-
-    // ========================================================================
-    // TRANSACTION TRACKER - FIFO pour mémoriser le routing
-    // ========================================================================
-    //
-    // Quand une transaction est acceptée (req && gnt), on enregistre
-    // si c'est vers RAM (0) ou PERIPH (1) dans une FIFO.
-    // Quand une réponse arrive (rvalid), on POP la FIFO pour savoir
-    // d'où router la réponse.
-    //
-    // ========================================================================
-
- // ========================================================================
-    // TRANSACTION TRACKER - VERSION FINALE SANS INITIAL
-    // ========================================================================
-
-    localparam int TRACKER_DEPTH = 7;
-
-    typedef enum logic {
-        SRC_RAM    = 1'b0,
-        SRC_PERIPH = 1'b1
-    } rsp_src_t;
-
-    // Signaux FIFO
-    rsp_src_t tracker_mem [TRACKER_DEPTH];
-    logic [$clog2(TRACKER_DEPTH)-1:0] tracker_wptr;
-    logic [$clog2(TRACKER_DEPTH)-1:0] tracker_rptr;
-    logic [$clog2(TRACKER_DEPTH):0]   tracker_count;
-    logic tracker_full;
-    logic tracker_empty;
-
-    rsp_src_t tracker_push_data;
-    logic     tracker_push;
-    rsp_src_t tracker_pop_data;
-    logic     tracker_pop;
-
-    // PUSH : Enregistrer la source quand req && gnt
-    assign tracker_push = (ram_req_core && ram_gnt_core) || 
-                        (periph_req && periph_gnt);
-    assign tracker_push_data = (ram_req_core && ram_gnt_core) ? SRC_RAM : SRC_PERIPH;
-
-    // ✅ POP CORRIGÉ : Basé sur les sources, pas sur data_rvalid
-    assign tracker_pop = (ram_rvalid_i || periph_rvalid) && data_rready;
-
-    // Lecture de la FIFO
-    assign tracker_pop_data = tracker_mem[tracker_rptr];
-
-    // Logique FIFO
-    always_ff @(posedge seq.clk) begin
-        if (seq.rst) begin
-            tracker_wptr  <= '0;
-            tracker_rptr  <= '0;
-            tracker_count <= '0;
-        end else begin
-            // PUSH
-            if (tracker_push && !tracker_full) begin
-                tracker_mem[tracker_wptr] <= tracker_push_data;
-                tracker_wptr <= tracker_wptr + 1;
-            end
-            
-            // POP
-            if (tracker_pop && !tracker_empty) begin
-                tracker_rptr <= tracker_rptr + 1;
-            end
-            
-            // COUNT
-            case ({tracker_push && !tracker_full, tracker_pop && !tracker_empty})
-                2'b10:   tracker_count <= tracker_count + 1;
-                2'b01:   tracker_count <= tracker_count - 1;
-                default: tracker_count <= tracker_count;
-            endcase
-        end
-    end
-
-    assign tracker_full  = (tracker_count == TRACKER_DEPTH);
-    assign tracker_empty = (tracker_count == 0);
-
-    // ========================================================================
-    // MUX DE RÉPONSE - VERSION SÉCURISÉE
-    // ========================================================================
-
-    // Grant : Bloquer si FIFO pleine
-    assign data_gnt = tracker_full ? 1'b0 : 
-                    (is_ram_addr ? ram_gnt_core : periph_gnt);
-
-    // ✅ Réponse : NE LIT JAMAIS tracker_pop_data si empty
-    always_comb begin
-        // Valeurs par défaut
-        data_rvalid = 1'b0;
-        data_rdata  = '0;
-        
-        // ✅ Seulement si la FIFO n'est PAS vide
-        if (!tracker_empty) begin
-            case (tracker_pop_data)
-                SRC_RAM: begin
-                    data_rvalid = ram_rvalid_i;
-                    data_rdata  = ram_rdata_i;
-                end
-                
-                SRC_PERIPH: begin
-                    data_rvalid = periph_rvalid;
-                    data_rdata  = periph_rdata;
-                end
-                
-                default: begin
-                    // Cas X ou invalide : rester à 0
-                    data_rvalid = 1'b0;
-                    data_rdata  = '0;
-                end
-            endcase
-        end
-    end
-    // ========================================================================
-    // INSTRUCTIONS - OBI → AXI (ROM via MEM[0])
-    // ========================================================================
-
-    adam_obi_to_axil #(
-        `ADAM_CFG_PARAMS_MAP
-    ) instr_obi_to_axil (
+    ) instr_adam_obi_to_axil (
         .seq   (seq),
         .pause (pause_inst),
 
@@ -333,24 +148,224 @@ module adam_core_cv32e40p #(
         .req    (inst_req),
         .gnt    (inst_gnt),
         .addr   (inst_addr),
-        .we     (1'b0),
-        .be     (4'b0),
-        .wdata  (32'b0),
+        .we     ('0),
+        .be     ('0),
+        .wdata  ('0),
         .rvalid (inst_rvalid),
         .rready (inst_rready),
-        .rdata  (inst_rdata)
+        .rdata  (inst_rdata) 
+    );
+`ifdef DIFT
+    // ========================================================================
+    // DATA + TAGS : 2 CONVERTISSEURS OBI → AXI PARALLÈLES
+    // ========================================================================
+
+    // Signaux intermédiaires pour DATA converter
+    logic  data_conv_req;
+    logic  data_conv_gnt;
+    logic  data_conv_rvalid;
+    logic  data_conv_rready;
+    DATA_T data_conv_rdata;
+
+    // Signaux intermédiaires pour TAGS converter
+    logic       tags_conv_req;
+    logic       tags_conv_gnt;
+    logic       tags_conv_rvalid;
+    logic       tags_conv_rready;
+    DATA_T      tags_conv_rdata;
+
+    // ========================================================================
+    // FSM ROBUSTE AVEC TRACKING INDÉPENDANT
+    // ========================================================================
+    
+    typedef enum logic [2:0] {
+        SYNC_IDLE,
+        SYNC_WAIT_GNT,      // Attendre les 2 gnt
+        SYNC_WAIT_RVALID    // Attendre les 2 rvalid
+    } sync_state_t;
+
+    sync_state_t sync_state_q;
+    
+    // Flags de tracking
+    logic data_gnt_received;
+    logic tags_gnt_received;
+    logic data_rvalid_received;
+    logic tags_rvalid_received;
+    
+    // Buffers de données
+    DATA_T      data_buffer;
+    logic [3:0] tags_buffer;
+
+    always_ff @(posedge seq.clk) begin
+        if (seq.rst) begin
+            sync_state_q         <= SYNC_IDLE;
+            data_gnt_received    <= 1'b0;
+            tags_gnt_received    <= 1'b0;
+            data_rvalid_received <= 1'b0;
+            tags_rvalid_received <= 1'b0;
+            data_buffer          <= '0;
+            tags_buffer          <= '0;
+        end else begin
+            case (sync_state_q)
+                SYNC_IDLE: begin
+                    if (data_req) begin
+                        // Accepter immédiatement et lancer les 2 transactions
+                        sync_state_q         <= SYNC_WAIT_GNT;
+                        data_gnt_received    <= 1'b0;
+                        tags_gnt_received    <= 1'b0;
+                        data_rvalid_received <= 1'b0;
+                        tags_rvalid_received <= 1'b0;
+                    end
+                end
+                
+                SYNC_WAIT_GNT: begin
+                    // Capturer les gnt indépendamment
+                    if (data_conv_gnt) begin
+                        data_gnt_received <= 1'b1;
+                    end
+                    
+                    if (tags_conv_gnt) begin
+                        tags_gnt_received <= 1'b1;
+                    end
+                    
+                    // ✅ Passer à WAIT_RVALID quand BOTH gnt reçus
+                    if (data_gnt_received && tags_gnt_received) begin
+                        sync_state_q <= SYNC_WAIT_RVALID;
+                    end
+                end
+                
+                SYNC_WAIT_RVALID: begin
+                    // Capturer data
+                    if (data_conv_rvalid && !data_rvalid_received) begin
+                        data_buffer          <= data_conv_rdata;
+                        data_rvalid_received <= 1'b1;
+                    end
+                    
+                    // Capturer tags
+                    if (tags_conv_rvalid && !tags_rvalid_received) begin
+                        tags_buffer          <= tags_conv_rdata[3:0];
+                        tags_rvalid_received <= 1'b1;
+                    end
+                    
+                    // ✅ Retour IDLE quand BOTH rvalid reçus
+                    if (data_rvalid_received && tags_rvalid_received) begin
+                        sync_state_q <= SYNC_IDLE;
+                    end
+                end
+            endcase
+        end
+    end
+
+    // ========================================================================
+    // LANCEMENT DES CONVERTISSEURS
+    // ========================================================================
+    
+    //  Lancer les deux dès qu'on accepte la requête
+    assign data_conv_req = (sync_state_q == SYNC_WAIT_GNT) || 
+                           (sync_state_q == SYNC_WAIT_RVALID && !data_gnt_received);
+    
+    assign tags_conv_req = (sync_state_q == SYNC_WAIT_GNT) || 
+                           (sync_state_q == SYNC_WAIT_RVALID && !tags_gnt_received);
+    
+    assign data_conv_rready = 1'b1;
+    assign tags_conv_rready = 1'b1;
+
+    // Convertisseur DATA
+    adam_obi_to_axil #(
+        `ADAM_CFG_PARAMS_MAP
+    ) data_obi_to_axil (
+        .seq   (seq),
+        .pause (pause_data),
+        
+        .axil (axil_data),
+        
+        .req    (data_conv_req),
+        .gnt    (data_conv_gnt),
+        .addr   (data_addr),
+        .we     (data_we),
+        .be     (data_be),
+        .wdata  (data_wdata),
+        .rvalid (data_conv_rvalid),
+        .rready (data_conv_rready),
+        .rdata  (data_conv_rdata)
     );
 
-    // pause ==================================================================
+    // Convertisseur TAGS
+    adam_obi_to_axil #(
+        `ADAM_CFG_PARAMS_MAP
+    ) tags_obi_to_axil (
+        .seq   (seq),
+        .pause (pause_data),
+        
+        .axil (axil_tags),
+        
+        .req    (tags_conv_req),
+        .gnt    (tags_conv_gnt),
+        .addr   (data_addr),
+        .we     (data_we_tag),
+        .be     (data_be),
+        .wdata  ({28'b0, {4{data_wdata_tag}}}),
+        .rvalid (tags_conv_rvalid),
+        .rready (tags_conv_rready),
+        .rdata  (tags_conv_rdata)
+    );
+
+    // ========================================================================
+    // SIGNAUX VERS CPU
+    // ========================================================================
+
+    // ✅ GNT : Accepter immédiatement si en IDLE
+    assign data_gnt = (sync_state_q == SYNC_IDLE) && data_req;
+    assign data_gnt_tag = data_gnt;
+
+    // ✅ RVALID : Quand BOTH rvalid reçus
+    assign data_rvalid = (sync_state_q == SYNC_WAIT_RVALID) && 
+                         data_rvalid_received && 
+                         tags_rvalid_received;
+    assign data_rvalid_tag = data_rvalid;
+
+    // ✅ RDATA : Depuis les buffers
+    assign data_rdata = data_buffer;
+    assign data_rdata_tag = tags_buffer;
+
+`else
+    // ========================================================================
+    // SANS DIFT : UN SEUL CONVERTISSEUR DATA
+    // ========================================================================
+    
+    adam_obi_to_axil #(
+        `ADAM_CFG_PARAMS_MAP
+    ) data_obi_to_axil (
+        .seq   (seq),
+        .pause (pause_data),
+        
+        .axil (axil_data),
+        
+        .req    (data_req),
+        .gnt    (data_gnt),
+        .addr   (data_addr),
+        .we     (data_we),
+        .be     (data_be),
+        .wdata  (data_wdata),
+        .rvalid (data_rvalid),
+        .rready (data_rready),
+        .rdata  (data_rdata)
+    );
+`endif
+
+    // ========================================================================
+    // PAUSE
+    // ========================================================================
 
     ADAM_PAUSE pause_null ();
     ADAM_PAUSE temp_pause [3] ();
-    assign temp_pause[0].ack        = pause_inst.ack;
-    assign temp_pause[1].ack        = pause_data.ack;
-    assign temp_pause[2].ack        = pause_null.ack;
-    assign pause_inst.req           = temp_pause[0].req;
-    assign pause_data.req           = temp_pause[1].req;
-    assign pause_null.req           = temp_pause[2].req;
+    
+    assign temp_pause[0].ack = pause_inst.ack;
+    assign temp_pause[1].ack = pause_data.ack;
+    assign temp_pause[2].ack = pause_null.ack;
+    assign pause_inst.req    = temp_pause[0].req;
+    assign pause_data.req    = temp_pause[1].req;
+    assign pause_null.req    = temp_pause[2].req;
 
     adam_pause_demux #(
         `ADAM_CFG_PARAMS_MAP,
@@ -365,4 +380,3 @@ module adam_core_cv32e40p #(
     );
 
 endmodule
-

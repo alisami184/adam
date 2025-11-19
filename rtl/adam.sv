@@ -89,7 +89,12 @@ module adam #(
     ADDR_T       hsdom_cpu_boot_addr [NO_CPUS+1];
     logic        hsdom_cpu_irq       [NO_CPUS+1];
 
-    `ADAM_AXIL_I hsdom_cpu_axil [2*NO_CPUS+1] ();
+    // Après (3 AXI par CPU avec DIFT) :
+    `ifdef DIFT
+        `ADAM_AXIL_I hsdom_cpu_axil [3*NO_CPUS+1] ();
+    `else
+        `ADAM_AXIL_I hsdom_cpu_axil [2*NO_CPUS+1] ();
+    `endif
 
     logic        hsdom_dma_rst   [NO_DMAS+1];
     ADAM_PAUSE   hsdom_dma_pause [NO_DMAS+1] ();
@@ -306,19 +311,13 @@ module adam #(
     // hsdom - cpu ============================================================
 
 
-    // Signaux OBI direct CPU → RAM
-    logic  hsdom_cpu0_ram_req;
-    ADDR_T hsdom_cpu0_ram_addr;
-    logic  hsdom_cpu0_ram_we;
-    STRB_T hsdom_cpu0_ram_be;
-    DATA_T hsdom_cpu0_ram_wdata;
-    logic  hsdom_cpu0_ram_rvalid;
-    DATA_T hsdom_cpu0_ram_rdata;
 `ifdef DIFT
-    // Tags
-    logic              hsdom_cpu0_ram_we_tag;
-    logic              hsdom_cpu0_ram_wdata_tag;
-    logic [3:0]        hsdom_cpu0_ram_rdata_tag;
+    logic       hsdom_cpu_data_we_tag    [NO_CPUS+1];
+    logic       hsdom_cpu_data_wdata_tag [NO_CPUS+1];
+    logic [3:0] hsdom_cpu_data_rdata_tag [NO_CPUS+1];
+    logic       hsdom_cpu_data_gnt_tag   [NO_CPUS+1];
+    logic       hsdom_cpu_data_rvalid_tag[NO_CPUS+1];
+    logic [3:0] hsdom_cpu_data_be_tag    [NO_CPUS+1];
 `endif
 
     for (genvar i = 0; i < NO_CPUS; i++) begin
@@ -333,27 +332,21 @@ module adam #(
 
             .boot_addr (hsdom_cpu_boot_addr[i]),
             .hart_id   (i+1), // +1 because LPCPU is 0
-
-            .axil_inst (hsdom_cpu_axil[2*i + 0]),
-            .axil_data (hsdom_cpu_axil[2*i + 1]),
+`ifdef DIFT
+            //  DIFT : 3 AXI par CPU
+            .axil_inst (hsdom_cpu_axil[3*i + 0]),  // Instructions
+            .axil_data (hsdom_cpu_axil[3*i + 1]),  // Data
+            .axil_tags (hsdom_cpu_axil[3*i + 2]),  // Tags
+`else
+            // Sans DIFT : 2 AXI par CPU
+            .axil_inst (hsdom_cpu_axil[2*i + 0]),  // Instructions
+            .axil_data (hsdom_cpu_axil[2*i + 1]),  // Data
+`endif
 
             .irq (hsdom_cpu_irq[i]),
 
             .debug_req     (hsdom_debug_req[i+1]),
-            .debug_unavail (hsdom_debug_unavail[i+1]),
-            // Connexions directes RAM ↔ CPU
-            .ram_req_o       (hsdom_cpu0_ram_req    ),
-            .ram_addr_o      (hsdom_cpu0_ram_addr   ),
-            .ram_we_o        (hsdom_cpu0_ram_we     ),
-            .ram_be_o        (hsdom_cpu0_ram_be     ),
-            .ram_wdata_o     (hsdom_cpu0_ram_wdata  ),
-            .ram_rvalid_i    (hsdom_cpu0_ram_rvalid ),
-            .ram_rdata_i     (hsdom_cpu0_ram_rdata  ),
-`ifdef DIFT
-            .we_tag          (hsdom_cpu0_ram_we_tag ),
-            .wdata_tag       (hsdom_cpu0_ram_wdata_tag),
-            .rdata_tag       (hsdom_cpu0_ram_rdata_tag)
-`endif
+            .debug_unavail (hsdom_debug_unavail[i+1])
         );
     end
 
@@ -412,60 +405,51 @@ module adam #(
                 .rdata (hsdom_mem_rdata[i])
             );
         end
-        else begin
-            // MEM[i]: RAM
+        else if (( i == 0 || MEM_SIZE[i] != 0) || i == 1) begin
             adam_mem #(
                 `ADAM_CFG_PARAMS_MAP,
+
                 .SIZE (MEM_SIZE[i])
+
 `ifndef SYNTHESIS
-                , .HEXFILE ((i == 0) ? "/adam/mem0.hex" : "/adam/mem1.hex")
+                , .HEXFILE ((i == 0) ?
+                    "/adam/mem0.hex" :
+                    "/adam/mem1.hex"
+                )
 `endif
             ) i_adam_mem (
                 .seq (hsdom_mem_seq[i]),
-                
-                // MEM[1]: Connexion DIRECTE CPU
-                // MEM[0]: Via AXI
-                .req   ((i == 1) ? hsdom_cpu0_ram_req   : hsdom_mem_req[i]),
-                .addr  ((i == 1) ? hsdom_cpu0_ram_addr  : hsdom_mem_addr[i]),
-                .we    ((i == 1) ? hsdom_cpu0_ram_we    : hsdom_mem_we[i]),
-                .be    ((i == 1) ? hsdom_cpu0_ram_be    : hsdom_mem_be[i]),
-                .wdata ((i == 1) ? hsdom_cpu0_ram_wdata : hsdom_mem_wdata[i]),
+
+                .req   (hsdom_mem_req  [i]),
+                .addr  (hsdom_mem_addr [i]),
+                .we    (hsdom_mem_we   [i]),
+                .be    (hsdom_mem_be   [i]),
+                .wdata (hsdom_mem_wdata[i]),
                 .rdata (hsdom_mem_rdata[i])
             );
         end
-    end
-        
-    logic hsdom_cpu0_ram_req_q;
-    logic hsdom_cpu0_ram_req_is_ram;
-    logic hsdom_cpu0_ram_req_is_ram_q;
-    logic hsdom_cpu0_ram_rvalid_reg;
+`ifdef DIFT
+        else if (i == 2) begin
+            adam_tag_mem #(
+                `ADAM_CFG_PARAMS_MAP,
 
-    // Vérifier que l'adresse est bien vers RAM
-    assign hsdom_cpu0_ram_req_is_ram = (hsdom_cpu0_ram_addr[31:24] == 8'h02);
-
-    always_ff @(posedge hsdom_seq.clk) begin
-        if (hsdom_seq.rst) begin
-            hsdom_cpu0_ram_req_q        <= 1'b0;
-            hsdom_cpu0_ram_req_is_ram_q <= 1'b0;
-            hsdom_cpu0_ram_rvalid_reg   <= 1'b0;
-        end else begin
-            // Capturer req et is_ram du cycle N
-            hsdom_cpu0_ram_req_q        <= hsdom_cpu0_ram_req;
-            hsdom_cpu0_ram_req_is_ram_q <= hsdom_cpu0_ram_req_is_ram;
-            
-            // ✅ CORRECTION : Utiliser VERSIONS RETARDÉES !
-            // rvalid au cycle N+1 SEULEMENT si :
-            // - req était présent au cycle N (req_q && !req = pulse)
-            // - ET l'adresse du cycle N était vers RAM (req_is_ram_q)
-            hsdom_cpu0_ram_rvalid_reg <= hsdom_cpu0_ram_req_q && 
-                                        !hsdom_cpu0_ram_req &&
-                                        hsdom_cpu0_ram_req_is_ram_q;  // ← VERSION Q !
+                .SIZE (MEM_SIZE[i]),
+                .TAG_WIDTH (4)
+`ifndef SYNTHESIS
+                , .HEXFILE ("/adam/mem_tags.hex")
+`endif
+            ) i_adam_tag_mem (
+                .seq   (hsdom_mem_seq[i]),
+                .req   (hsdom_mem_req  [i]),
+                .addr  (hsdom_mem_addr [i]),
+                .we    (hsdom_mem_we   [i]),
+                .be    (hsdom_mem_be   [i]),
+                .wdata (hsdom_mem_wdata[i]),
+                .rdata (hsdom_mem_rdata[i])
+            );
         end
-    end
-
-    assign hsdom_cpu0_ram_rvalid = hsdom_cpu0_ram_rvalid_reg;
-    assign hsdom_cpu0_ram_rdata  = hsdom_mem_rdata[1];
-    
+`endif
+end
 
     // hsdom - hsp ===========================================================
 
@@ -683,5 +667,6 @@ module adam #(
 
     `ADAM_PAUSE_SLV_TIE_ON(lsdom_pause);
     `ADAM_PAUSE_SLV_TIE_ON(hsdom_pause);
+
 
 endmodule

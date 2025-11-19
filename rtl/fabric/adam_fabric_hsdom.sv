@@ -6,8 +6,13 @@ module adam_fabric_hsdom #(
 ) (
     ADAM_SEQ.Slave   seq,
     ADAM_PAUSE.Slave pause,
-
+`ifdef DIFT
+    // ✅ DIFT : 3 AXI par CPU
+    AXI_LITE.Slave cpu [3*NO_CPUS+1],
+`else
+    // Sans DIFT : 2 AXI par CPU
     AXI_LITE.Slave cpu [2*NO_CPUS+1],
+`endif
     AXI_LITE.Slave dma [NO_DMAS+1],
     AXI_LITE.Slave debug_slv,
     AXI_LITE.Slave from_lsdom,
@@ -17,8 +22,11 @@ module adam_fabric_hsdom #(
     AXI_LITE.Master debug_mst,
     AXI_LITE.Master to_lsdom
 );
-
-    localparam NO_SLVS = 2*NO_CPUS + NO_DMAS + EN_DEBUG + 1;
+    `ifdef DIFT
+        localparam NO_SLVS = 3*NO_CPUS + NO_DMAS + EN_DEBUG + 1;  // ✅ 3 AXI par CPU
+    `else
+        localparam NO_SLVS = 2*NO_CPUS + NO_DMAS + EN_DEBUG + 1;  // 2 AXI par CPU
+    `endif
     localparam NO_MSTS = NO_MEMS + NO_HSPS + EN_DEBUG + 1;
 
     localparam type RULE_T = adam_cfg_pkg::MMAP_T;

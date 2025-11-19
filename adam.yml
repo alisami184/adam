@@ -138,7 +138,7 @@ targets:
     no_cpus: 1
     no_dmas: 0
     no_hsps: 2
-    no_mems: 2
+    no_mems: 3
 
     # en_lpcpu: False
     # en_lpmem: False
@@ -180,7 +180,7 @@ default:
   no_cpus: 1
   no_dmas: 1
   no_hsps: 2
-  no_mems: 2
+  no_mems: 3
 
   en_lpcpu: True
   en_lpmem: True
@@ -189,7 +189,7 @@ default:
   lpmem_size: 4096
 
   # Use ROM for the first memory block by setting its size to 0
-  mem_size: [524288, 524288]
+  mem_size: [524288, 524288,524288]
 
   no_lspa_gpios:  1
   no_lspa_spis:   1
@@ -249,6 +249,7 @@ fsets:
       - ./rtl/intf/adam_intf_stream.sv
       - ./rtl/axil/adam_axil_pause.sv
       - ./rtl/adam_mem.sv
+      - ./rtl/adam_tag_mem.sv
       - bhv/adam_seq_bhv.sv
       - bhv/jtag/adam_jtag_mst_bhv.sv
       - powerflow/src/adam_synth.v
@@ -451,6 +452,7 @@ fsets:
       - fabric/adam_fabric.sv
 
       - adam_mem.sv
+      - adam_tag_mem.sv
       - adam.sv
       - adam_clk_div.sv
       - adam_top.sv

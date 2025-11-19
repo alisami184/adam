@@ -22,8 +22,13 @@ module adam_fabric #(
     
     ADAM_SEQ.Slave   hsdom_seq,
     ADAM_PAUSE.Slave hsdom_pause,
-
+`ifdef DIFT
+    // ✅ DIFT : 3 AXI par CPU
+    AXI_LITE.Slave hsdom_cpu [3*NO_CPUS+1],
+`else
+    // Sans DIFT : 2 AXI par CPU
     AXI_LITE.Slave hsdom_cpu [2*NO_CPUS+1],
+`endif
     AXI_LITE.Slave hsdom_dma [NO_DMAS+1],
     AXI_LITE.Slave hsdom_debug_slv,
 
