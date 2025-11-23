@@ -11,8 +11,8 @@ _heap_size  = 1024;
 /* Memory */
 MEMORY
 {
-	ROM (rx)  : ORIGIN = 0x01000000, LENGTH = 8192
-    RAM (w)   : ORIGIN = 0x02000000, LENGTH = 8192
+	ROM (rx)  : ORIGIN = 0x00000000, LENGTH = 8192
+    RAM (w)   : ORIGIN = 0x00001000, LENGTH = 8192
 }
 
 _stack_ptr_size = 4; /* Size of stack pointer, 4 for 32-bit, 8 for 64-bit */

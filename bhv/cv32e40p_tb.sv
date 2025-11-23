@@ -15,11 +15,12 @@ module cv32e40p_tb;
     // ========================================================================
     // PARAMETRES
     // ========================================================================
-    
+
     parameter CLK_PERIOD   = 10;           // 100MHz
-    parameter ROM_SIZE     = 65536;        // 64KB pour instructions
-    parameter RAM_SIZE     = 65536;        // 64KB pour data
-    parameter BOOT_ADDR    = 32'h0000_0000;
+    parameter ROM_SIZE     = 8192;         // 8KB pour instructions (matches linker)
+    parameter RAM_SIZE     = 8192;         // 8KB pour data (matches linker)
+    parameter RAM_BASE     = 32'h0000_1000; // RAM starts at 0x1000
+    parameter BOOT_ADDR    = 32'h0000_0000; // Boot from ROM at 0x0
     parameter DEBUG_ADDR_HALT      = 32'h1A11_0800;
     parameter DEBUG_ADDR_EXCEPTION = 32'h1A11_0808;
     
@@ -107,20 +108,24 @@ module cv32e40p_tb;
     );
     
     // ========================================================================
-    // DATA MEMORY (RAM)
+    // DATA MEMORY (RAM) - avec décodage d'adresse
     // ========================================================================
-    
+
+    // Address decoding: RAM is at 0x1000+
+    logic [31:0] dmem_addr;
+    assign dmem_addr = data_addr - RAM_BASE;  // Offset address for RAM
+
     simple_mem #(
         .SIZE      (RAM_SIZE),
         .INIT_FILE ("dmem.hex")  // Optionnel: charger données initiales
     ) dmem (
         .clk    (clk),
         .rst_n  (rst_n),
-        
+
         .req    (data_req),
         .gnt    (data_gnt),
         .rvalid (data_rvalid),
-        .addr   (data_addr),
+        .addr   (dmem_addr),        // Use offset address
         .we     (data_we),
         .be     (data_be),
         .wdata  (data_wdata),
@@ -194,11 +199,43 @@ module cv32e40p_tb;
     );
 
     // ========================================================================
+    // MONITORING & DEBUG
+    // ========================================================================
+
+    // Monitor instruction fetches
+    always @(posedge clk) begin
+        if (inst_req && inst_gnt) begin
+            $display("[%0t] IFETCH: addr=0x%08h", $time, inst_addr);
+        end
+        if (inst_rvalid) begin
+            $display("[%0t] IFETCH_RDATA: data=0x%08h", $time, inst_rdata);
+        end
+    end
+
+    // Monitor data accesses
+    always @(posedge clk) begin
+        if (data_req && data_gnt) begin
+            if (data_we) begin
+                $display("[%0t] DWRITE: addr=0x%08h data=0x%08h be=%b",
+                         $time, data_addr, data_wdata, data_be);
+            end else begin
+                $display("[%0t] DREAD: addr=0x%08h", $time, data_addr);
+            end
+        end
+        if (data_rvalid && !data_we) begin
+            $display("[%0t] DREAD_RDATA: data=0x%08h", $time, data_rdata);
+        end
+    end
+
+    // ========================================================================
     // TIMEOUT
     // ========================================================================
-    
+
     initial begin
-        #1000us $error("timeout");
+        #1000us begin
+            $display("[%0t] TIMEOUT - Test did not complete", $time);
+            $error("timeout");
+        end
     end
     
     // ========================================================================
