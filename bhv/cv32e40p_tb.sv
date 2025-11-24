@@ -59,7 +59,7 @@ module cv32e40p_tb;
     // ========================================================================
 
     logic       data_we_tag;
-    logic       data_wdata_tag;         // 1-bit tag from CPU (0=untainted, 1=tainted)
+    logic [3:0] data_wdata_tag;         // 4-bit tag from CPU (replicated: {4{tag_bit}})
     logic [3:0] data_rdata_tag;         // 4-bit tag to CPU (1 bit per byte)
     logic       data_gnt_tag;
     logic       data_rvalid_tag;
