@@ -133,7 +133,7 @@ module cv32e40p_tb;
 
     tag_mem #(
         .SIZE      (RAM_SIZE),          // Same size as data RAM (8KB)
-        .INIT_FILE ("tmem.hex")         // Tag initialization file
+        .INIT_FILE ("tmem_pretaint.hex") // Tag initialization file with pre-tainted variables
     ) tmem (
         .clk       (clk),
         .rst_n     (rst_n),
