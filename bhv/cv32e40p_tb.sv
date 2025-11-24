@@ -59,8 +59,8 @@ module cv32e40p_tb;
     // ========================================================================
 
     logic       data_we_tag;
-    logic [3:0] data_wdata_tag;         // Fixed: 4-bit tag
-    logic [3:0] data_rdata_tag;
+    logic       data_wdata_tag;         // 1-bit tag from CPU (0=untainted, 1=tainted)
+    logic [3:0] data_rdata_tag;         // 4-bit tag to CPU (1 bit per byte)
     logic       data_gnt_tag;
     logic       data_rvalid_tag;
     
@@ -133,7 +133,6 @@ module cv32e40p_tb;
 
     tag_mem #(
         .SIZE      (RAM_SIZE),          // Same size as data RAM (8KB)
-        .TAG_WIDTH (4),                 // 4-bit tags
         .INIT_FILE ("tmem.hex")         // Tag initialization file
     ) tmem (
         .clk       (clk),
@@ -145,8 +144,8 @@ module cv32e40p_tb;
         .addr      (dmem_addr),         // Same address as data memory (offset)
         .we        (data_we_tag),       // Tag write enable from core
         .be        (data_be),           // Same byte enables as data
-        .wdata_tag (data_wdata_tag),    // 4-bit tag write data from core
-        .rdata_tag (data_rdata_tag)     // 4-bit tag read data to core
+        .wdata_tag (data_wdata_tag),    // 1-bit tag write from core
+        .rdata_tag (data_rdata_tag)     // 4-bit tag read to core (1 bit per byte)
     );
 
     // ========================================================================
@@ -248,12 +247,13 @@ module cv32e40p_tb;
     always @(posedge clk) begin
         if (data_req && data_gnt_tag) begin
             if (data_we_tag) begin
-                $display("[%0t] TAG_WRITE: addr=0x%08h tag=0x%h be=%b",
+                $display("[%0t] TAG_WRITE: addr=0x%08h tag=%b be=%b (if tag=1 → ALL bytes tainted)",
                          $time, data_addr, data_wdata_tag, data_be);
             end
         end
         if (data_rvalid_tag) begin
-            $display("[%0t] TAG_READ: tag=0x%h", $time, data_rdata_tag);
+            $display("[%0t] TAG_READ: tags[3:0]=%b (1 bit per byte)",
+                     $time, data_rdata_tag);
         end
     end
 
