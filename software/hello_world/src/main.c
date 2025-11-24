@@ -1,27 +1,15 @@
 #include <stdint.h>
 
-// Version simple sans périphériques ADAM pour test standalone
+// VERSION 1: Ultra-simple - Une seule addition
+// Parfait pour voir la propagation des tags DIFT sur une opération
 
 int main(void) {
-  // forcer les accès RAM
-    volatile int global_a = 10;
-    volatile int global_b = 20;
-    volatile int global_result = 0;
+    volatile int a = 10;        // Store: a en RAM
+    volatile int b = 20;        // Store: b en RAM
+    volatile int sum;           // Déclaration
 
-    // Lecture depuis RAM (.data)
-    volatile int x = global_a;      // LECTURE RAM
-    volatile int y = global_b;      // LECTURE RAM
+    sum = a + b;                // Load a, Load b, ADD, Store sum
+                                // DIFT: Tag(sum) = Tag(a) | Tag(b)
 
-    // Calculs avec accès RAM forcés
-    global_result = x + y;           // = 30, ÉCRITURE RAM
-    global_result = global_result * 2; // LECTURE + ÉCRITURE RAM = 60
-
-    // Test d'écriture/lecture RAM
-    global_a = global_result / 3;    // LECTURE + ÉCRITURE RAM = 20
-
-    // Boucle avec accès mémoire visible
-    while(1) {
-        global_b = global_b + 1;     // LECTURE + ÉCRITURE RAM à chaque itération
-    }
-    return 0;
+    while(1);                   // Loop infini
 }
