@@ -55,19 +55,14 @@ module cv32e40p_tb;
     logic [31:0] data_rdata;
     
     // ========================================================================
-    // SIGNAUX DIFT (non utilisés mais nécessaires pour connexion)
+    // SIGNAUX DIFT
     // ========================================================================
-    
+
     logic       data_we_tag;
-    logic       data_wdata_tag;
+    logic [3:0] data_wdata_tag;         // Fixed: 4-bit tag
     logic [3:0] data_rdata_tag;
     logic       data_gnt_tag;
     logic       data_rvalid_tag;
-    
-    // Tie-off DIFT signals (DIFT désactivé)
-    assign data_rdata_tag   = 4'b0;
-    assign data_gnt_tag     = data_gnt;      // Mirror data_gnt
-    assign data_rvalid_tag  = data_rvalid;   // Mirror data_rvalid
     
     // ========================================================================
     // SIGNAUX DE CONTROLE
@@ -131,7 +126,29 @@ module cv32e40p_tb;
         .wdata  (data_wdata),
         .rdata  (data_rdata)
     );
-    
+
+    // ========================================================================
+    // TAG MEMORY (DIFT) - parallèle à la RAM
+    // ========================================================================
+
+    tag_mem #(
+        .SIZE      (RAM_SIZE),          // Same size as data RAM (8KB)
+        .TAG_WIDTH (4),                 // 4-bit tags
+        .INIT_FILE ("tmem.hex")         // Tag initialization file
+    ) tmem (
+        .clk       (clk),
+        .rst_n     (rst_n),
+
+        .req       (data_req),          // Same request as data memory
+        .gnt       (data_gnt_tag),      // Tag memory grant
+        .rvalid    (data_rvalid_tag),   // Tag memory read valid
+        .addr      (dmem_addr),         // Same address as data memory (offset)
+        .we        (data_we_tag),       // Tag write enable from core
+        .be        (data_be),           // Same byte enables as data
+        .wdata_tag (data_wdata_tag),    // 4-bit tag write data from core
+        .rdata_tag (data_rdata_tag)     // 4-bit tag read data to core
+    );
+
     // ========================================================================
     // DUT: CV32E40P CORE
     // ========================================================================
@@ -224,6 +241,19 @@ module cv32e40p_tb;
         end
         if (data_rvalid && !data_we) begin
             $display("[%0t] DREAD_RDATA: data=0x%08h", $time, data_rdata);
+        end
+    end
+
+    // Monitor DIFT tag accesses
+    always @(posedge clk) begin
+        if (data_req && data_gnt_tag) begin
+            if (data_we_tag) begin
+                $display("[%0t] TAG_WRITE: addr=0x%08h tag=0x%h be=%b",
+                         $time, data_addr, data_wdata_tag, data_be);
+            end
+        end
+        if (data_rvalid_tag) begin
+            $display("[%0t] TAG_READ: tag=0x%h", $time, data_rdata_tag);
         end
     end
 

@@ -63,6 +63,9 @@ vlog -sv -work work +incdir+../libs/cv32e40p/rtl/include \
 # Compile simple_mem module
 vlog -sv -work work ../rtl/simple_mem.sv
 
+# Compile tag_mem module (DIFT tag memory)
+vlog -sv -work work ../rtl/tag_mem.sv
+
 # Compile testbench
 vlog -sv -work work +define+VUNIT_RUN_ALL_TESTS ../bhv/cv32e40p_tb.sv
 
@@ -93,6 +96,13 @@ add wave -noupdate -radix binary /cv32e40p_tb/data_be
 
 add wave -noupdate -divider {Core Internal - PC}
 add wave -noupdate -radix hexadecimal /cv32e40p_tb/dut/core_i/pc_id
+
+add wave -noupdate -divider {DIFT Tag Interface}
+add wave -noupdate /cv32e40p_tb/data_we_tag
+add wave -noupdate /cv32e40p_tb/data_gnt_tag
+add wave -noupdate /cv32e40p_tb/data_rvalid_tag
+add wave -noupdate -radix hexadecimal /cv32e40p_tb/data_wdata_tag
+add wave -noupdate -radix hexadecimal /cv32e40p_tb/data_rdata_tag
 
 # Configure wave window
 configure wave -namecolwidth 250
